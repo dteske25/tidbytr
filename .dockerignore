@@ -1,0 +1,6 @@
+node_modules
+dist
+.tidbytr
+.tidbytr-test
+coverage
+*.log

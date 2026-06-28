@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.tidbytr/
+.tidbytr-test/
+coverage/
+.DS_Store
+*.log

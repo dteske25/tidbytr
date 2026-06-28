@@ -1,0 +1,48 @@
+name: Tidbytr
+version: 0.1.0
+slug: tidbytr
+description: Local Tidbyt Gen 2 display scheduler with NWS weather, sports, and manual controls.
+url: https://github.com/dteske25/tidbytr
+arch:
+  - aarch64
+  - amd64
+  - armv7
+startup: application
+boot: auto
+init: false
+ingress: true
+ingress_port: 8787
+panel_icon: mdi:led-strip
+ports:
+  8787/tcp: null
+ports_description:
+  8787/tcp: Tidbytr dashboard (not required when using Ingress)
+options:
+  tidbyt_api_token: ""
+  tidbyt_device_id: ""
+  timezone: America/Chicago
+  latitude: 39.0997
+  longitude: -94.5786
+  nws_contact: tidbytr@example.local
+  favorite_teams: []
+  log_level: info
+  scheduler_interval_seconds: 60
+  refresh_interval_seconds: 600
+  quiet_hours_start: ""
+  quiet_hours_end: ""
+  installation_id: tidbytr-main
+schema:
+  tidbyt_api_token: password
+  tidbyt_device_id: str
+  timezone: str
+  latitude: float
+  longitude: float
+  nws_contact: str
+  favorite_teams:
+    - str
+  log_level: list(trace|debug|info|warn|error)
+  scheduler_interval_seconds: int(15,3600)
+  refresh_interval_seconds: int(60,21600)
+  quiet_hours_start: str?
+  quiet_hours_end: str?
+  installation_id: str

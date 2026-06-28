@@ -1,0 +1,21 @@
+configuration:
+  tidbyt_api_token:
+    name: Tidbyt API Token
+    description: Bearer token used to push images through the Tidbyt cloud API.
+  tidbyt_device_id:
+    name: Tidbyt Device ID
+    description: Target Tidbyt Gen 2 device ID.
+  timezone:
+    name: Timezone
+    description: IANA timezone used by the scheduler.
+  latitude:
+    name: Latitude
+    description: Home latitude for NWS weather.
+  longitude:
+    name: Longitude
+    description: Home longitude for NWS weather.
+  nws_contact:
+    name: NWS Contact
+    description: Contact string used as the NWS User-Agent.
+network:
+  8787/tcp: Tidbytr dashboard (not required when using Ingress)
