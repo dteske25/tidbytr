@@ -4,11 +4,11 @@ WORKDIR /app
 
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+ADD https://codeload.github.com/dteske25/tidbytr/tar.gz/refs/heads/main /tmp/tidbytr.tar.gz
+RUN tar -xzf /tmp/tidbytr.tar.gz --strip-components=1 -C /app
+
 RUN corepack enable && pnpm install --frozen-lockfile
 
-COPY tsconfig.json tsconfig.server.json vite.config.ts vitest.config.ts ./
-COPY src ./src
 RUN pnpm build && pnpm prune --prod
 
 FROM node:24-bookworm-slim
@@ -23,7 +23,7 @@ ENV TIDBYTR_CONFIG_PATH=/data/config.json
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY tidbytr/run.sh /run.sh
+COPY run.sh /run.sh
 
 RUN chmod +x /run.sh && mkdir -p /data
 

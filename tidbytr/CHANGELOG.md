@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Fix Home Assistant add-on Docker builds by making the Dockerfile valid from the add-on folder build context.
+- Remove deprecated `armv7` architecture from the add-on metadata.
+
 ## 0.1.0
 
 - Initial V1 add-on package.

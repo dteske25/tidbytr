@@ -1,12 +1,11 @@
 name: Tidbytr
-version: 0.1.0
+version: 0.1.1
 slug: tidbytr
 description: Local Tidbyt Gen 2 display scheduler with NWS weather, sports, and manual controls.
 url: https://github.com/dteske25/tidbytr
 arch:
   - aarch64
   - amd64
-  - armv7
 startup: application
 boot: auto
 init: false
