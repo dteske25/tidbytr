@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.2
+
+- Fix the dashboard white screen under Home Assistant Ingress by using relative Vite assets and Ingress-aware API URLs.
+- Pin the add-on Docker source download to the matching release tag for reproducible Home Assistant builds.
+
 ## 0.1.1
 
 - Fix Home Assistant add-on Docker builds by making the Dockerfile valid from the add-on folder build context.

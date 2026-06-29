@@ -1,5 +1,5 @@
 name: Tidbytr
-version: 0.1.1
+version: 0.1.2
 slug: tidbytr
 description: Local Tidbyt Gen 2 display scheduler with NWS weather, sports, and manual controls.
 url: https://github.com/dteske25/tidbytr

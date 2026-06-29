@@ -1,6 +1,6 @@
 {
   "name": "tidbytr",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "type": "module",
   "description": "Local TypeScript display server for Tidbyt Gen 2 with a Home Assistant add-on package.",

@@ -4,7 +4,7 @@ WORKDIR /app
 
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 
-ADD https://codeload.github.com/dteske25/tidbytr/tar.gz/refs/heads/main /tmp/tidbytr.tar.gz
+ADD https://codeload.github.com/dteske25/tidbytr/tar.gz/refs/tags/v0.1.2 /tmp/tidbytr.tar.gz
 RUN tar -xzf /tmp/tidbytr.tar.gz --strip-components=1 -C /app
 
 RUN corepack enable && pnpm install --frozen-lockfile

@@ -1,6 +1,5 @@
 import {
   Activity,
-  AlertTriangle,
   CalendarClock,
   CheckCircle2,
   Clock3,
@@ -12,12 +11,12 @@ import {
   Play,
   Settings,
   SkipForward,
-  SlidersHorizontal,
   Wifi,
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Panel, SourceHealth, SourceId, TidbytrStatus } from "../../core/types.js";
+import { apiUrl } from "./ingress.js";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -43,7 +42,7 @@ export function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [statusResponse, panelsResponse] = await Promise.all([fetch("/api/status"), fetch("/api/panels")]);
+      const [statusResponse, panelsResponse] = await Promise.all([fetch(apiUrl("status")), fetch(apiUrl("panels"))]);
       if (!statusResponse.ok || !panelsResponse.ok) {
         throw new Error("API unavailable");
       }
@@ -71,7 +70,7 @@ export function App() {
   );
 
   const act = async (path: string, body: Record<string, unknown>) => {
-    await fetch(path, {
+    await fetch(apiUrl(path), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -84,7 +83,7 @@ export function App() {
       <aside className="sidebar">
         <div>
           <div className="brand">Tidbytr</div>
-          <div className="version">v0.1.0</div>
+          <div className="version">v0.1.2</div>
         </div>
 
         <nav aria-label="Main navigation">
@@ -146,7 +145,7 @@ export function App() {
                   <img
                     alt={`${currentPanel.title} preview`}
                     className="preview-image"
-                    src={`/api/panels/${encodeURIComponent(currentPanel.id)}/preview.webp?v=${refreshKey}`}
+                    src={apiUrl(`panels/${encodeURIComponent(currentPanel.id)}/preview.webp?v=${refreshKey}`)}
                   />
                 ) : (
                   <div className="preview-empty">NO PANEL</div>
@@ -194,23 +193,23 @@ export function App() {
 
             <section className="rail-section">
               <h2>Actions</h2>
-              <button className="primary-action" onClick={() => void act("/api/actions/push", { panelId: currentPanel?.id })}>
+              <button className="primary-action" onClick={() => void act("actions/push", { panelId: currentPanel?.id })}>
                 <Play size={16} />
                 Push now
               </button>
               <div className="action-pair">
-                <button className="outline-action skip" onClick={() => void act("/api/actions/skip", { panelId: currentPanel?.id })}>
+                <button className="outline-action skip" onClick={() => void act("actions/skip", { panelId: currentPanel?.id })}>
                   <SkipForward size={16} />
                   Skip
                 </button>
-                <button className="outline-action snooze" onClick={() => void act("/api/actions/snooze", { minutes: 15 })}>
+                <button className="outline-action snooze" onClick={() => void act("actions/snooze", { minutes: 15 })}>
                   <Clock3 size={16} />
                   Snooze
                 </button>
               </div>
               <div className="snooze-grid" aria-label="Snooze duration">
                 {[5, 15, 30, 60].map((minutes) => (
-                  <button key={minutes} onClick={() => void act("/api/actions/snooze", { minutes })}>
+                  <button key={minutes} onClick={() => void act("actions/snooze", { minutes })}>
                     {minutes === 60 ? "1h" : `${minutes}m`}
                   </button>
                 ))}
@@ -226,7 +225,7 @@ export function App() {
                     <button
                       className="toggle-row"
                       key={sourceId}
-                      onClick={() => void act("/api/actions/source", { sourceId, enabled: disabled })}
+                      onClick={() => void act("actions/source", { sourceId, enabled: disabled })}
                     >
                       <span>{sourceLabel(sourceId)}</span>
                       <span className={disabled ? "toggle" : "toggle on"} />
