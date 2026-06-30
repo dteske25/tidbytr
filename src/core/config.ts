@@ -4,9 +4,17 @@ import path from "node:path";
 import { z } from "zod";
 import type { HomeAssistantOptions, RuntimeConfig, SanitizedConfig } from "./types.js";
 
+export const DEFAULT_INSTALLATION_ID = "tidbytrmain";
+const LEGACY_DEFAULT_INSTALLATION_ID = "tidbytr-main";
+
 const timeStringSchema = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:mm in 24-hour time");
+
+const installationIdSchema = z
+  .string()
+  .min(1)
+  .regex(/^[A-Za-z0-9]+$/, "Tidbyt installation ID must be alphanumeric (a-z, A-Z, 0-9)");
 
 export const homeAssistantOptionsSchema = z.object({
   tidbytApiToken: z.string().default(""),
@@ -26,7 +34,7 @@ export const homeAssistantOptionsSchema = z.object({
     })
     .nullable()
     .default(null),
-  installationId: z.string().min(1).default("tidbytr-main"),
+  installationId: installationIdSchema.default(DEFAULT_INSTALLATION_ID),
 });
 
 export const runtimeConfigSchema = homeAssistantOptionsSchema.extend({
@@ -48,7 +56,7 @@ export function defaultOptions(): HomeAssistantOptions {
     schedulerIntervalSeconds: 60,
     refreshIntervalSeconds: 600,
     quietHours: null,
-    installationId: "tidbytr-main",
+    installationId: DEFAULT_INSTALLATION_ID,
   };
 }
 
@@ -62,6 +70,7 @@ export function normalizeOptions(input: unknown): HomeAssistantOptions {
     ...defaults,
     ...compactCandidate,
     favoriteTeams: normalizeFavoriteTeams((compactCandidate as Partial<HomeAssistantOptions>).favoriteTeams),
+    installationId: normalizeInstallationId((compactCandidate as Partial<HomeAssistantOptions>).installationId),
   };
 
   return homeAssistantOptionsSchema.parse(normalized);
@@ -136,4 +145,12 @@ function normalizeFavoriteTeams(value: unknown): string[] {
   }
 
   return [];
+}
+
+function normalizeInstallationId(value: unknown): string {
+  if (value === undefined || value === LEGACY_DEFAULT_INSTALLATION_ID) {
+    return DEFAULT_INSTALLATION_ID;
+  }
+
+  return String(value);
 }
