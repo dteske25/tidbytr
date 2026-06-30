@@ -71,6 +71,15 @@ export class PixelCanvas {
     return cursor;
   }
 
+  measureText(text: string, scale = 1): number {
+    let width = 0;
+    for (const char of text.toUpperCase()) {
+      width += (glyphWidth(char) + 1) * scale;
+    }
+
+    return Math.max(0, width - scale);
+  }
+
   drawFrame(color: Rgba): void {
     this.fillRect(0, 0, this.width, 1, color);
     this.fillRect(0, this.height - 1, this.width, 1, color);

@@ -1,5 +1,7 @@
 import type { DisplayTransport, FrameBundle, PushResult, RuntimeConfig, SourceHealth } from "../../src/core/types.js";
+import type { Panel } from "../../src/core/types.js";
 import type { SportsSnapshot, WeatherSnapshot } from "../../src/core/panels.js";
+import type { DisplayRenderer } from "../../src/renderer/types.js";
 import type { SnapshotProvider } from "../../src/server/runtime.js";
 import { defaultOptions } from "../../src/core/config.js";
 
@@ -48,6 +50,25 @@ export class FakeTransport implements DisplayTransport {
       message: "ok",
       attemptCount: 1,
       pushedAt: new Date().toISOString(),
+    };
+  }
+}
+
+export class FakeRenderer implements DisplayRenderer {
+  rendered: Panel[] = [];
+
+  constructor(private readonly webp = Buffer.from("RIFF$\x00\x00\x00WEBPVP8 fake-tidbytr-preview")) {}
+
+  async render(panel: Panel, now = new Date()): Promise<FrameBundle> {
+    this.rendered.push(panel);
+    return {
+      panelId: panel.id,
+      width: 64,
+      height: 32,
+      mimeType: "image/webp",
+      encoding: "webp",
+      webp: this.webp,
+      renderedAt: now.toISOString(),
     };
   }
 }

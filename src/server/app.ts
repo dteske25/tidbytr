@@ -8,6 +8,10 @@ import { loadRuntimeConfig } from "../core/config.js";
 import type { SourceId } from "../core/types.js";
 import { TidbytrRuntime, type TidbytrRuntimeOptions } from "./runtime.js";
 
+interface BuildAppOptions extends Partial<TidbytrRuntimeOptions> {
+  startScheduler?: boolean;
+}
+
 const pushBodySchema = z.object({
   panelId: z.string().optional(),
 });
@@ -25,24 +29,30 @@ const sourceBodySchema = z.object({
   enabled: z.boolean(),
 });
 
-export async function buildApp(options: Partial<TidbytrRuntimeOptions> = {}) {
+export async function buildApp(options: BuildAppOptions = {}) {
+  const config = options.config ?? loadRuntimeConfig();
+  const app = Fastify({
+    logger: {
+      level: config.logLevel,
+    },
+  });
   const runtime = new TidbytrRuntime({
-    config: options.config ?? loadRuntimeConfig(),
+    config,
     store: options.store,
     weatherProvider: options.weatherProvider,
     sportsProvider: options.sportsProvider,
     transport: options.transport,
-  });
-  const app = Fastify({
-    logger: {
-      level: runtime.getRuntimeConfig().logLevel,
-    },
+    renderer: options.renderer,
+    logger: app.log,
   });
 
   app.decorate("runtime", runtime);
   app.addHook("onClose", async () => {
     runtime.close();
   });
+  if (options.startScheduler !== false) {
+    runtime.startScheduler();
+  }
 
   await app.register(cors, { origin: true });
 
@@ -62,12 +72,19 @@ export async function buildApp(options: Partial<TidbytrRuntimeOptions> = {}) {
   app.get("/api/panels", async () => ({ panels: await runtime.getPanels() }));
   app.get("/api/panels/:id/preview.webp", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const preview = await runtime.preview(id);
-    if (!preview) {
-      return reply.code(404).send({ error: "Panel not found" });
-    }
+    try {
+      const preview = await runtime.preview(id);
+      if (!preview) {
+        return reply.code(404).send({ error: "Panel not found" });
+      }
 
-    return reply.header("Content-Type", "image/webp").send(preview);
+      return reply.header("Content-Type", "image/webp").send(preview);
+    } catch (error) {
+      return reply.code(500).send({
+        error: "Render failed",
+        message: error instanceof Error ? error.message : "Unknown render error",
+      });
+    }
   });
 
   app.post("/api/actions/push", async (request, reply) => {
