@@ -4,6 +4,7 @@
 
 - Fix the default Tidbyt installation ID so it is alphanumeric and accepted by the Tidbyt API.
 - Migrate the previous built-in `tidbytr-main` default to `tidbytrmain` during option normalization.
+- Avoid Home Assistant add-on build failures before a matching release tag exists by making the Docker source ref configurable.
 
 ## 0.1.2
 
