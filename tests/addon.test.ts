@@ -42,7 +42,8 @@ describe("Home Assistant add-on package", () => {
 
     expect(run).toContain("/data/options.json");
     expect(run).toContain("TIDBYTR_DATA_DIR");
-    expect(dockerfile).toContain(`codeload.github.com/dteske25/tidbytr/tar.gz/refs/tags/v${packageJson.version}`);
+    expect(dockerfile).toContain("ARG TIDBYTR_SOURCE_REF=refs/heads/main");
+    expect(dockerfile).toContain("codeload.github.com/dteske25/tidbytr/tar.gz/${TIDBYTR_SOURCE_REF}");
     expect(dockerfile).toContain("TIDBYTR_DATA_DIR=/data");
     expect(dockerfile).toContain("COPY run.sh /run.sh");
     expect(dockerfile).toContain("CMD [\"/run.sh\"]");
