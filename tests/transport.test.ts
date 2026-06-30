@@ -55,6 +55,7 @@ function frame(): FrameBundle {
     width: 64,
     height: 32,
     mimeType: "image/webp",
+    encoding: "webp",
     webp: Buffer.from("webp"),
     renderedAt: "2026-06-28T12:00:00.000Z",
   };

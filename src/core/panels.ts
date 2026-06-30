@@ -36,7 +36,7 @@ export interface SportsGame {
 
 export function buildPanels(config: RuntimeConfig, weather: WeatherSnapshot, sports: SportsSnapshot, now = new Date()): Panel[] {
   const createdAt = now.toISOString();
-  const panels: Panel[] = [clockPanel(createdAt)];
+  const panels: Panel[] = [clockPanel(createdAt, config.timezone)];
 
   if (weather.forecast) {
     panels.push({
@@ -74,7 +74,7 @@ export function buildPanels(config: RuntimeConfig, weather: WeatherSnapshot, spo
   return panels;
 }
 
-export function clockPanel(createdAt = new Date().toISOString()): Panel {
+export function clockPanel(createdAt = new Date().toISOString(), timezone = "UTC"): Panel {
   return {
     id: "clock",
     kind: "clock",
@@ -85,7 +85,7 @@ export function clockPanel(createdAt = new Date().toISOString()): Panel {
     ttlSeconds: 60,
     expiresAt: addSeconds(new Date(createdAt), 60),
     payload: {
-      timezone: "local",
+      timezone,
     },
   };
 }

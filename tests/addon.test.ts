@@ -49,6 +49,18 @@ describe("Home Assistant add-on package", () => {
     expect(dockerfile).toContain("CMD [\"/run.sh\"]");
   });
 
+  it("bundles pinned Pixlet for supported Linux add-on architectures", () => {
+    const dockerfile = fs.readFileSync("tidbytr/Dockerfile", "utf8");
+
+    expect(dockerfile).toContain("ARG PIXLET_VERSION=0.34.0");
+    expect(dockerfile).toContain("pixlet_${PIXLET_VERSION}_linux_${PIXLET_ARCH}.tar.gz");
+    expect(dockerfile).toContain("checksums.txt");
+    expect(dockerfile).toContain("sha256sum -c -");
+    expect(dockerfile).toContain("amd64) PIXLET_ARCH=\"amd64\"");
+    expect(dockerfile).toContain("arm64|aarch64) PIXLET_ARCH=\"arm64\"");
+    expect(dockerfile).toContain("/usr/local/bin/pixlet");
+  });
+
   it("includes add-on docs and PNG assets", () => {
     for (const file of ["README.md", "DOCS.md", "CHANGELOG.md", "icon.png", "logo.png"]) {
       expect(fs.existsSync(`tidbytr/${file}`)).toBe(true);

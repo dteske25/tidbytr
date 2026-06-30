@@ -17,6 +17,7 @@ export interface FrameBundle {
   width: 64;
   height: 32;
   mimeType: "image/webp";
+  encoding: "webp";
   webp: Buffer;
   renderedAt: string;
 }

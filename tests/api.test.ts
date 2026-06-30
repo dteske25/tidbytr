@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { DisplayRenderer } from "../src/renderer/types.js";
 import { buildApp } from "../src/server/app.js";
 import { TidbytrStore } from "../src/storage/store.js";
-import { FakeSportsProvider, FakeTransport, FakeWeatherProvider, testConfig } from "./helpers/fakes.js";
+import { FakeRenderer, FakeSportsProvider, FakeTransport, FakeWeatherProvider, testConfig } from "./helpers/fakes.js";
 
 describe("api", () => {
   it("returns status and panels", async () => {
@@ -44,6 +45,18 @@ describe("api", () => {
     await app.close();
   });
 
+  it("returns a concise 500 when preview rendering fails", async () => {
+    const app = await makeApp(new FakeTransport(), {}, new FailingRenderer("pixlet missing"));
+    const preview = await app.inject({ method: "GET", url: "/api/panels/forecast/preview.webp" });
+
+    expect(preview.statusCode).toBe(500);
+    expect(preview.json()).toMatchObject({
+      error: "Render failed",
+      message: "pixlet missing",
+    });
+    await app.close();
+  });
+
   it("pushes, skips, and snoozes", async () => {
     const transport = new FakeTransport();
     const app = await makeApp(transport);
@@ -58,11 +71,32 @@ describe("api", () => {
     expect(snooze.json().reason).toBe("Snoozed for 5 minutes");
     await app.close();
   });
+
+  it("runs scheduled pushes in the background", async () => {
+    const transport = new FakeTransport();
+    const app = await makeApp(transport, { schedulerIntervalSeconds: 0.01 });
+
+    await waitFor(() => transport.pushes.length > 0);
+
+    expect(transport.pushes[0]?.frame.panelId).toBeTruthy();
+    await app.close();
+  });
+
+  it("records scheduled render failures as not shown", async () => {
+    const app = await makeApp(new FakeTransport(), { schedulerIntervalSeconds: 0.01 }, new FailingRenderer("render timeout"));
+
+    await waitFor(async () => {
+      const status = await app.inject({ method: "GET", url: "/api/status" });
+      return status.json().decisions.some((decision: { result: string; reason: string }) => decision.result === "not-shown" && decision.reason === "render timeout");
+    });
+
+    await app.close();
+  });
 });
 
-async function makeApp(transport = new FakeTransport()) {
+async function makeApp(transport = new FakeTransport(), configOverrides = {}, renderer: DisplayRenderer = new FakeRenderer()) {
   return buildApp({
-    config: testConfig(),
+    config: testConfig(configOverrides),
     store: new TidbytrStore(":memory:"),
     weatherProvider: new FakeWeatherProvider({
       alerts: [],
@@ -72,5 +106,25 @@ async function makeApp(transport = new FakeTransport()) {
       games: [{ id: "kc-live", team: "KC", opponent: "DEN", startsAt: "2026-06-28T18:00:00.000Z", status: "live", teamScore: 14, opponentScore: 10 }],
     }),
     transport,
+    renderer,
   });
+}
+
+async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 500): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Timed out waiting for condition");
+}
+
+class FailingRenderer implements DisplayRenderer {
+  constructor(private readonly message: string) {}
+
+  async render(): Promise<never> {
+    throw new Error(this.message);
+  }
 }

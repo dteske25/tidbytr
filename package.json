@@ -10,7 +10,7 @@
     "dev:web": "vite --host 0.0.0.0",
     "build": "pnpm build:web && pnpm build:server",
     "build:web": "vite build",
-    "build:server": "tsc -p tsconfig.server.json",
+    "build:server": "tsc -p tsconfig.server.json && node scripts/copy-renderer-assets.mjs",
     "start": "node dist/server/index.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
