@@ -9,7 +9,7 @@ Design reference: [tidbytr-dashboard-concept.png](./assets/tidbytr-dashboard-con
 - Server: Fastify on `TIDBYTR_HOST`/`TIDBYTR_PORT`, default `0.0.0.0:8787`.
 - UI: React/Vite build served by Fastify from `dist/web`.
 - Persistence: SQLite database at `TIDBYTR_DATA_DIR/tidbytr.sqlite`, default `.tidbytr/tidbytr.sqlite`; Home Assistant sets `TIDBYTR_DATA_DIR=/data`.
-- Default installation ID: `tidbytr-main`.
+- Default installation ID: `tidbytrmain`. Tidbyt requires installation IDs to be alphanumeric.
 - Display transport: `DisplayTransport` abstraction with `TidbytCloudTransport` posting WebP payloads to `https://api.tidbyt.com/v0/devices/:deviceId/push`.
 
 ## API Contract
