@@ -16,7 +16,7 @@ describe("TidbytCloudTransport", () => {
     const result = await transport.push(frame(), {
       apiToken: "secret",
       deviceId: "dev123",
-      installationId: "tidbytr-main",
+      installationId: "tidbytrmain",
     });
 
     expect(result.ok).toBe(true);
@@ -24,7 +24,7 @@ describe("TidbytCloudTransport", () => {
     expect(requests[0]?.init.headers).toMatchObject({ Authorization: "Bearer secret" });
     expect(JSON.parse(String(requests[0]?.init.body))).toMatchObject({
       image: Buffer.from("webp").toString("base64"),
-      installationID: "tidbytr-main",
+      installationID: "tidbytrmain",
     });
   });
 
@@ -41,7 +41,7 @@ describe("TidbytCloudTransport", () => {
     const result = await transport.push(frame(), {
       apiToken: "secret",
       deviceId: "dev123",
-      installationId: "tidbytr-main",
+      installationId: "tidbytrmain",
     });
 
     expect(result.ok).toBe(true);
