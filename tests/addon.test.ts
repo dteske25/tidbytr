@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
-import { normalizeOptions } from "../src/core/config.js";
+import { DEFAULT_INSTALLATION_ID, normalizeOptions } from "../src/core/config.js";
 import packageJson from "../package.json" with { type: "json" };
 
 describe("Home Assistant add-on package", () => {
@@ -25,6 +25,15 @@ describe("Home Assistant add-on package", () => {
       expect(config.options).toHaveProperty(key);
       expect(config.schema).toHaveProperty(key);
     }
+  });
+
+  it("uses a valid alphanumeric Tidbyt installation ID default", () => {
+    const config = YAML.parse(fs.readFileSync("tidbytr/config.yaml", "utf8")) as {
+      options: Record<string, unknown>;
+    };
+
+    expect(config.options.installation_id).toBe(DEFAULT_INSTALLATION_ID);
+    expect(config.options.installation_id).toMatch(/^[A-Za-z0-9]+$/);
   });
 
   it("uses /data persistence and the built server entrypoint", () => {
@@ -59,5 +68,16 @@ describe("Home Assistant add-on package", () => {
     expect(options.latitude).toBe(39.0997);
     expect(options.longitude).toBe(-94.5786);
     expect(options.nwsContact).toBe("tidbytr@example.local");
+    expect(options.installationId).toBe(DEFAULT_INSTALLATION_ID);
+  });
+
+  it("migrates the previous built-in installation ID to the valid default", () => {
+    const options = normalizeOptions({ installationId: "tidbytr-main" });
+
+    expect(options.installationId).toBe(DEFAULT_INSTALLATION_ID);
+  });
+
+  it("rejects non-alphanumeric installation IDs", () => {
+    expect(() => normalizeOptions({ installationId: "custom-id" })).toThrow(/alphanumeric/);
   });
 });
