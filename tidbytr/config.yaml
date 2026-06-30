@@ -1,5 +1,5 @@
 name: Tidbytr
-version: 0.1.2
+version: 0.1.3
 slug: tidbytr
 description: Local Tidbyt Gen 2 display scheduler with NWS weather, sports, and manual controls.
 url: https://github.com/dteske25/tidbytr
@@ -29,7 +29,7 @@ options:
   refresh_interval_seconds: 600
   quiet_hours_start: ""
   quiet_hours_end: ""
-  installation_id: tidbytr-main
+  installation_id: tidbytrmain
 schema:
   tidbyt_api_token: password
   tidbyt_device_id: str

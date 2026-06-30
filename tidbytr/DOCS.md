@@ -14,7 +14,7 @@
 - `scheduler_interval_seconds`: decision cadence.
 - `refresh_interval_seconds`: provider refresh cadence.
 - `quiet_hours_start` and `quiet_hours_end`: `HH:mm` quiet window. Critical NWS alerts may interrupt.
-- `installation_id`: Tidbyt installation ID. Defaults to `tidbytr-main`.
+- `installation_id`: Tidbyt installation ID. Must be alphanumeric. Defaults to `tidbytrmain`.
 
 ## Dashboard
 
