@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.3
+
+- Fix the default Tidbyt installation ID so it is alphanumeric and accepted by the Tidbyt API.
+- Migrate the previous built-in `tidbytr-main` default to `tidbytrmain` during option normalization.
+
 ## 0.1.2
 
 - Fix the dashboard white screen under Home Assistant Ingress by using relative Vite assets and Ingress-aware API URLs.
