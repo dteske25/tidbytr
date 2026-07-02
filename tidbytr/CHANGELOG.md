@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0
+
+- Add a Pixlet-backed renderer for clock, forecast, and NWS alert panels.
+- Bundle pinned Pixlet 0.34.0 in the Home Assistant add-on image for amd64 and aarch64.
+- Keep the existing Sharp renderer as a development and sports-panel fallback.
+- Record scheduled render failures as not shown while returning concise preview render errors.
+
 ## 0.1.3
 
 - Fix the default Tidbyt installation ID so it is alphanumeric and accepted by the Tidbyt API.
