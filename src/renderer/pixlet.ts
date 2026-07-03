@@ -19,7 +19,14 @@ export interface PixletRendererOptions {
   runner?: PixletProcessRunner;
 }
 
-const supportedPixletPanels = new Set<Panel["kind"]>(["clock", "forecast", "nws-alert"]);
+const supportedPixletPanels = new Set<Panel["kind"]>([
+  "clock",
+  "forecast",
+  "nws-alert",
+  "upcoming-game",
+  "live-score",
+  "final-score",
+]);
 
 export class PixletRenderer implements DisplayRenderer {
   private readonly pixletBinary: string;
@@ -93,10 +100,101 @@ export class PixletRenderer implements DisplayRenderer {
       kind: panel.kind,
       title: panel.title,
       payload: panel.payload,
+      display: buildDisplayPayload(panel, now, config),
       renderedAt: now.toISOString(),
       timezone: config.timezone,
     };
   }
+}
+
+function buildDisplayPayload(panel: Panel, now: Date, config: RuntimeConfig): Record<string, unknown> {
+  switch (panel.kind) {
+    case "clock":
+      const time = formatClockTime(now, config.timezone);
+      return {
+        time,
+        blinkTime: time.replace(":", " "),
+        date: formatClockDate(now, config.timezone),
+      };
+    case "forecast": {
+      const forecast = panel.payload as { temperature?: number; shortForecast?: string; windSpeed?: string; high?: number; low?: number };
+      return {
+        temp: typeof forecast.temperature === "number" ? `${forecast.temperature}F` : "--F",
+        highLow: `H${forecast.high ?? "-"} L${forecast.low ?? "-"}`,
+        wind: forecast.windSpeed ? `WIND ${forecast.windSpeed}` : "",
+        summary: forecast.shortForecast ?? "Forecast unavailable",
+      };
+    }
+    case "nws-alert": {
+      const alert = panel.payload as { severity?: string; event?: string; headline?: string };
+      return {
+        severity: (alert.severity ?? "alert").toUpperCase(),
+        event: alert.event ?? "NWS Alert",
+        headline: alert.headline ?? "",
+        message: `${alert.event ?? "NWS Alert"} ${alert.headline ?? ""}`.trim(),
+      };
+    }
+    case "upcoming-game":
+    case "live-score":
+    case "final-score": {
+      const game = panel.payload as {
+        team?: string;
+        opponent?: string;
+        startsAt?: string;
+        status?: string;
+        teamScore?: number;
+        opponentScore?: number;
+        period?: string;
+      };
+      return {
+        label: panel.kind === "live-score" ? "LIVE" : panel.kind === "final-score" ? "FINAL" : "NEXT",
+        team: game.team ?? "HOME",
+        opponent: game.opponent ?? "AWAY",
+        teamScore: String(game.teamScore ?? 0),
+        opponentScore: String(game.opponentScore ?? 0),
+        detail: game.period ?? (game.startsAt ? formatGameTime(game.startsAt, config.timezone) : "TBD"),
+      };
+    }
+    default:
+      return {};
+  }
+}
+
+function formatClockTime(now: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: timezone,
+  }).format(now);
+}
+
+function formatClockDate(now: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    timeZone: timezone,
+  })
+    .format(now)
+    .toUpperCase()
+    .replace(",", "");
+}
+
+function formatGameTime(value: string, timezone: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "TBD";
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "2-digit",
+    hour: "numeric",
+    timeZone: timezone,
+  })
+    .format(date)
+    .toUpperCase()
+    .replace(",", "");
 }
 
 export class SpawnPixletRunner implements PixletProcessRunner {
