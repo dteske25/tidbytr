@@ -1,8 +1,12 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DisplayRenderer } from "../src/renderer/types.js";
-import { buildApp } from "../src/server/app.js";
+import { LocalDisplayPublisher } from "../src/core/publisher.js";
+import { buildApp, buildDisplayApp } from "../src/server/app.js";
 import { TidbytrStore } from "../src/storage/store.js";
-import { FakeRenderer, FakeSportsProvider, FakeTransport, FakeWeatherProvider, testConfig } from "./helpers/fakes.js";
+import { FakeRenderer, FakeSportsProvider, FakeWeatherProvider, testConfig } from "./helpers/fakes.js";
 
 describe("api", () => {
   it("returns status and panels", async () => {
@@ -46,7 +50,7 @@ describe("api", () => {
   });
 
   it("returns a concise 500 when preview rendering fails", async () => {
-    const app = await makeApp(new FakeTransport(), {}, new FailingRenderer("pixlet missing"));
+    const app = await makeApp({}, new FailingRenderer("pixlet missing"));
     const preview = await app.inject({ method: "GET", url: "/api/panels/forecast/preview.webp" });
 
     expect(preview.statusCode).toBe(500);
@@ -57,33 +61,33 @@ describe("api", () => {
     await app.close();
   });
 
-  it("pushes, skips, and snoozes", async () => {
-    const transport = new FakeTransport();
-    const app = await makeApp(transport);
+  it("publishes, skips, and snoozes", async () => {
+    const app = await makeApp();
 
     const push = await app.inject({ method: "POST", url: "/api/actions/push", payload: { panelId: "forecast" } });
     const skip = await app.inject({ method: "POST", url: "/api/actions/skip", payload: { panelId: "forecast" } });
     const snooze = await app.inject({ method: "POST", url: "/api/actions/snooze", payload: { minutes: 5 } });
 
     expect(push.statusCode).toBe(200);
-    expect(transport.pushes).toHaveLength(1);
+    expect(push.json().decision.result).toBe("published");
+    expect(fs.existsSync(path.join(app.dataDir, "display", "current.webp"))).toBe(true);
     expect(skip.json().result).toBe("skipped");
     expect(snooze.json().reason).toBe("Snoozed for 5 minutes");
     await app.close();
   });
 
-  it("runs scheduled pushes in the background", async () => {
-    const transport = new FakeTransport();
-    const app = await makeApp(transport, { schedulerIntervalSeconds: 0.01 });
+  it("runs scheduled publishes in the background", async () => {
+    const app = await makeApp({ schedulerIntervalSeconds: 0.01 });
 
-    await waitFor(() => transport.pushes.length > 0);
+    await waitFor(() => fs.existsSync(path.join(app.dataDir, "display", "current.webp")));
 
-    expect(transport.pushes[0]?.frame.panelId).toBeTruthy();
+    const status = await app.inject({ method: "GET", url: "/api/status" });
+    expect(status.json().display.lastPublish.panelId).toBeTruthy();
     await app.close();
   });
 
   it("records scheduled render failures as not shown", async () => {
-    const app = await makeApp(new FakeTransport(), { schedulerIntervalSeconds: 0.01 }, new FailingRenderer("render timeout"));
+    const app = await makeApp({ schedulerIntervalSeconds: 0.01 }, new FailingRenderer("render timeout"));
 
     await waitFor(async () => {
       const status = await app.inject({ method: "GET", url: "/api/status" });
@@ -92,11 +96,45 @@ describe("api", () => {
 
     await app.close();
   });
+
+  it("serves the current WebP on the display listener and records pulls", async () => {
+    const app = await makeApp();
+    const displayApp = await buildDisplayApp(app.runtime);
+    const current = await displayApp.inject({ method: "GET", url: "/current.webp" });
+    const hiddenApi = await displayApp.inject({ method: "GET", url: "/api/status" });
+    const status = await app.inject({ method: "GET", url: "/api/status" });
+
+    expect(current.statusCode).toBe(200);
+    expect(current.headers["content-type"]).toContain("image/webp");
+    expect(current.headers["cache-control"]).toBe("no-store");
+    expect(current.rawPayload.length).toBeGreaterThan(20);
+    expect(hiddenApi.statusCode).toBe(404);
+    expect(status.json().display.lastPull).toBeTruthy();
+    expect(status.json().display.online).toBe(true);
+    await displayApp.close();
+    await app.close();
+  });
+
+  it("keeps the previous current frame when a later publish fails", async () => {
+    const renderer = new FlakyRenderer();
+    const app = await makeApp({}, renderer);
+
+    const first = await app.inject({ method: "POST", url: "/api/actions/push", payload: { panelId: "forecast" } });
+    expect(first.statusCode).toBe(200);
+    const framePath = path.join(app.dataDir, "display", "current.webp");
+    const original = fs.readFileSync(framePath);
+
+    const second = await app.inject({ method: "POST", url: "/api/actions/push", payload: { panelId: "forecast" } });
+    expect(second.statusCode).toBe(400);
+    expect(fs.readFileSync(framePath)).toEqual(original);
+    await app.close();
+  });
 });
 
-async function makeApp(transport = new FakeTransport(), configOverrides = {}, renderer: DisplayRenderer = new FakeRenderer()) {
-  return buildApp({
-    config: testConfig(configOverrides),
+async function makeApp(configOverrides = {}, renderer: DisplayRenderer = new FakeRenderer()) {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "tidbytr-api-test-"));
+  const app = await buildApp({
+    config: testConfig({ dataDir, ...configOverrides }),
     store: new TidbytrStore(":memory:"),
     weatherProvider: new FakeWeatherProvider({
       alerts: [],
@@ -105,9 +143,10 @@ async function makeApp(transport = new FakeTransport(), configOverrides = {}, re
     sportsProvider: new FakeSportsProvider({
       games: [{ id: "kc-live", team: "KC", opponent: "DEN", startsAt: "2026-06-28T18:00:00.000Z", status: "live", teamScore: 14, opponentScore: 10 }],
     }),
-    transport,
+    publisher: new LocalDisplayPublisher({ dataDir }),
     renderer,
   });
+  return Object.assign(app, { dataDir });
 }
 
 async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 500): Promise<void> {
@@ -126,5 +165,18 @@ class FailingRenderer implements DisplayRenderer {
 
   async render(): Promise<never> {
     throw new Error(this.message);
+  }
+}
+
+class FlakyRenderer extends FakeRenderer {
+  private calls = 0;
+
+  override async render(...args: Parameters<DisplayRenderer["render"]>) {
+    this.calls += 1;
+    if (this.calls > 1) {
+      throw new Error("render timeout");
+    }
+
+    return super.render(...args);
   }
 }

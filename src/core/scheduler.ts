@@ -21,7 +21,7 @@ export function choosePanel(request: SchedulerRequest): SchedulerDecision {
     : undefined;
 
   if (manualPanel && !isExpired(manualPanel, now)) {
-    return decision(now, manualPanel, "Manual push requested", "selected", skipped);
+    return decision(now, manualPanel, "Manual show requested", "selected", skipped);
   }
 
   if (request.manualPanelId && !manualPanel) {

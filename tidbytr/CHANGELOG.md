@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- Replace Tidbyt cloud push delivery with HDK local pull from `/current.webp`.
+- Add a read-only display listener on port `8788` while keeping the Ingress dashboard on `8787`.
+- Add `display_base_url` configuration and remove Tidbyt cloud credential options.
+- Track last publish, current frame, last firmware pull, and polling-based online status.
+
 ## 0.3.0
 
 - Add deterministic Pixlet display payloads so screen rendering can be tested reliably.

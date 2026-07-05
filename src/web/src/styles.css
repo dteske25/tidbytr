@@ -313,7 +313,7 @@ h2 {
   font-weight: 760;
 }
 
-.decision-pushed,
+.decision-published,
 .decision-selected {
   color: #0f8a4c;
   font-weight: 700;
@@ -507,6 +507,25 @@ h2 {
 
 .toggle.on::after {
   transform: translateX(16px);
+}
+
+.url-box {
+  margin-top: 14px;
+  border: 1px solid #dbe3ec;
+  border-radius: 6px;
+  background: #f8fafc;
+  color: #1f2937;
+  padding: 10px 11px;
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.config-warning {
+  margin: 10px 0 0;
+  color: #b45309;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 @media (max-width: 1100px) {

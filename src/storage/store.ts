@@ -3,7 +3,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type {
   HomeAssistantOptions,
-  PushResult,
+  PublishResult,
   SchedulerDecision,
   SchedulerState,
   SourceHealth,
@@ -62,12 +62,20 @@ export class TidbytrStore {
     this.setJson("scheduler_state", state);
   }
 
-  getLastPush(): PushResult | null {
-    return this.getJson<PushResult>("last_push");
+  getLastPublish(): PublishResult | null {
+    return this.getJson<PublishResult>("last_publish") ?? this.getJson<PublishResult>("last_push");
   }
 
-  setLastPush(result: PushResult): void {
-    this.setJson("last_push", result);
+  setLastPublish(result: PublishResult): void {
+    this.setJson("last_publish", result);
+  }
+
+  getLastPull(): string | null {
+    return this.getJson<string>("last_pull");
+  }
+
+  setLastPull(pulledAt: string): void {
+    this.setJson("last_pull", pulledAt);
   }
 
   getSourceHealth(): SourceHealth[] {

@@ -110,17 +110,17 @@ export function App() {
         <header className="topbar">
           <div className="run-state">
             <span className="live-dot" />
-            <strong>{status?.display.online ? "Tidbytr is ready" : "Tidbytr needs device config"}</strong>
+            <strong>{status?.display.online ? "Tidbyt is polling" : "Waiting for Tidbyt pull"}</strong>
           </div>
           <div className="topbar-metrics">
             <span>Display</span>
             <b className={status?.display.online ? "chip online" : "chip offline"}>{status?.display.online ? "Online" : "Offline"}</b>
-            <span>Last push</span>
-            <b>{formatLastPush(status)}</b>
+            <span>Last publish</span>
+            <b>{formatLastPublish(status)}</b>
+            <span>Last pull</span>
+            <b>{status?.display.lastPull ? formatTime(status.display.lastPull) : "Never"}</b>
             <span>Next decision</span>
             <b>{status ? `in ${status.scheduler.nextDecisionInSeconds}s` : "--"}</b>
-            <span>Time</span>
-            <b>{new Date().toLocaleString()}</b>
           </div>
         </header>
 
@@ -173,7 +173,7 @@ export function App() {
                     <span>{decision.reason}</span>
                     <span className="result-cell">
                       {decision.result}
-                      {decision.result === "pushed" ? <CheckCircle2 size={15} /> : <PauseCircle size={15} />}
+                      {decision.result === "published" ? <CheckCircle2 size={15} /> : <PauseCircle size={15} />}
                     </span>
                   </div>
                 ))}
@@ -195,7 +195,7 @@ export function App() {
               <h2>Actions</h2>
               <button className="primary-action" onClick={() => void act("actions/push", { panelId: currentPanel?.id })}>
                 <Play size={16} />
-                Push now
+                Show now
               </button>
               <div className="action-pair">
                 <button className="outline-action skip" onClick={() => void act("actions/skip", { panelId: currentPanel?.id })}>
@@ -214,6 +214,15 @@ export function App() {
                   </button>
                 ))}
               </div>
+            </section>
+
+            <section className="rail-section">
+              <h2>HDK pull URL</h2>
+              <div className="url-box">{status?.display.remoteUrl ?? "Set display_base_url"}</div>
+              {status?.config.displayBaseUrl && isIngressUrl(status.config.displayBaseUrl) ? (
+                <p className="config-warning">Use the LAN display port, not a Home Assistant Ingress URL.</p>
+              ) : null}
+              {!status?.config.displayBaseUrl ? <p className="config-warning">Set display_base_url to the add-on LAN address.</p> : null}
             </section>
 
             <section className="rail-section">
@@ -322,14 +331,18 @@ function formatTime(value: string) {
   }).format(new Date(value));
 }
 
-function formatLastPush(status: TidbytrStatus | null) {
-  if (!status?.display.lastPush) {
+function formatLastPublish(status: TidbytrStatus | null) {
+  if (!status?.display.lastPublish) {
     return "Never";
   }
 
-  return status.display.lastPush.ok ? "OK" : status.display.lastPush.message;
+  return status.display.lastPublish.ok ? "OK" : status.display.lastPublish.message;
 }
 
 function isIngress() {
   return window.location.pathname.includes("/api/hassio_ingress/");
+}
+
+function isIngressUrl(value: string) {
+  return value.includes("/api/hassio_ingress/") || value.includes("/hassio_ingress/");
 }

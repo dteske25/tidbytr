@@ -67,7 +67,7 @@ describe("scheduler", () => {
     expect(decision.selectedPanelId).toBe("warning");
   });
 
-  it("allows manual push to force a selected unexpired panel", () => {
+  it("allows manual show to force a selected unexpired panel", () => {
     const decision = choosePanel({
       panels: [panel("clock", 0, "clock"), panel("forecast", 40, "forecast")],
       now,
@@ -75,7 +75,7 @@ describe("scheduler", () => {
       manualPanelId: "clock",
     });
     expect(decision.selectedPanelId).toBe("clock");
-    expect(decision.reason).toBe("Manual push requested");
+    expect(decision.reason).toBe("Manual show requested");
   });
 });
 

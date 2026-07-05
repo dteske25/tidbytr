@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
-import { DEFAULT_INSTALLATION_ID, normalizeOptions } from "../src/core/config.js";
+import { normalizeOptions } from "../src/core/config.js";
 import packageJson from "../package.json" with { type: "json" };
 
 describe("Home Assistant add-on package", () => {
@@ -14,26 +14,22 @@ describe("Home Assistant add-on package", () => {
     const config = YAML.parse(fs.readFileSync("tidbytr/config.yaml", "utf8")) as {
       ingress: boolean;
       ingress_port: number;
+      ports: Record<string, unknown>;
       options: Record<string, unknown>;
       schema: Record<string, unknown>;
     };
 
     expect(config.ingress).toBe(true);
     expect(config.ingress_port).toBe(8787);
+    expect(config.ports["8788/tcp"]).toBe(8788);
     expect(config).toHaveProperty("version", packageJson.version);
-    for (const key of ["tidbyt_api_token", "tidbyt_device_id", "timezone", "latitude", "longitude", "nws_contact"]) {
+    for (const key of ["display_base_url", "timezone", "latitude", "longitude", "nws_contact"]) {
       expect(config.options).toHaveProperty(key);
       expect(config.schema).toHaveProperty(key);
     }
-  });
-
-  it("uses a valid alphanumeric Tidbyt installation ID default", () => {
-    const config = YAML.parse(fs.readFileSync("tidbytr/config.yaml", "utf8")) as {
-      options: Record<string, unknown>;
-    };
-
-    expect(config.options.installation_id).toBe(DEFAULT_INSTALLATION_ID);
-    expect(config.options.installation_id).toMatch(/^[A-Za-z0-9]+$/);
+    expect(config.options).not.toHaveProperty("tidbyt_api_token");
+    expect(config.options).not.toHaveProperty("tidbyt_device_id");
+    expect(config.options).not.toHaveProperty("installation_id");
   });
 
   it("uses /data persistence and the built server entrypoint", () => {
@@ -45,6 +41,8 @@ describe("Home Assistant add-on package", () => {
     expect(dockerfile).toContain("ARG TIDBYTR_SOURCE_REF=refs/heads/main");
     expect(dockerfile).toContain("codeload.github.com/dteske25/tidbytr/tar.gz/${TIDBYTR_SOURCE_REF}");
     expect(dockerfile).toContain("TIDBYTR_DATA_DIR=/data");
+    expect(dockerfile).toContain("TIDBYTR_DISPLAY_PORT=8788");
+    expect(dockerfile).toContain("EXPOSE 8787 8788");
     expect(dockerfile).toContain("COPY run.sh /run.sh");
     expect(dockerfile).toContain("CMD [\"/run.sh\"]");
   });
@@ -71,26 +69,21 @@ describe("Home Assistant add-on package", () => {
 
   it("keeps runtime defaults when add-on options are absent", () => {
     const options = normalizeOptions({
-      tidbytApiToken: undefined,
-      tidbytDeviceId: undefined,
+      displayBaseUrl: undefined,
       latitude: undefined,
       longitude: undefined,
       nwsContact: undefined,
     });
 
+    expect(options.displayBaseUrl).toBe("");
     expect(options.latitude).toBe(39.0997);
     expect(options.longitude).toBe(-94.5786);
     expect(options.nwsContact).toBe("tidbytr@example.local");
-    expect(options.installationId).toBe(DEFAULT_INSTALLATION_ID);
   });
 
-  it("migrates the previous built-in installation ID to the valid default", () => {
-    const options = normalizeOptions({ installationId: "tidbytr-main" });
+  it("normalizes the HDK display base URL", () => {
+    const options = normalizeOptions({ displayBaseUrl: " http://homeassistant.local:8788/// " });
 
-    expect(options.installationId).toBe(DEFAULT_INSTALLATION_ID);
-  });
-
-  it("rejects non-alphanumeric installation IDs", () => {
-    expect(() => normalizeOptions({ installationId: "custom-id" })).toThrow(/alphanumeric/);
+    expect(options.displayBaseUrl).toBe("http://homeassistant.local:8788");
   });
 });

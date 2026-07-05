@@ -1,5 +1,5 @@
 name: Tidbytr
-version: 0.3.0
+version: 0.4.0
 slug: tidbytr
 description: Local Tidbyt Gen 2 display scheduler with NWS weather, sports, and manual controls.
 url: https://github.com/dteske25/tidbytr
@@ -14,11 +14,12 @@ ingress_port: 8787
 panel_icon: mdi:led-strip
 ports:
   8787/tcp: null
+  8788/tcp: 8788
 ports_description:
   8787/tcp: Tidbytr dashboard (not required when using Ingress)
+  8788/tcp: Read-only HDK WebP feed for Tidbyt firmware polling
 options:
-  tidbyt_api_token: ""
-  tidbyt_device_id: ""
+  display_base_url: ""
   timezone: America/Chicago
   latitude: 39.0997
   longitude: -94.5786
@@ -29,10 +30,8 @@ options:
   refresh_interval_seconds: 600
   quiet_hours_start: ""
   quiet_hours_end: ""
-  installation_id: tidbytrmain
 schema:
-  tidbyt_api_token: password
-  tidbyt_device_id: str
+  display_base_url: str?
   timezone: str
   latitude: float
   longitude: float
@@ -44,4 +43,3 @@ schema:
   refresh_interval_seconds: int(60,21600)
   quiet_hours_start: str?
   quiet_hours_end: str?
-  installation_id: str

@@ -8,6 +8,12 @@ import { loadRuntimeConfig } from "../core/config.js";
 import type { SourceId } from "../core/types.js";
 import { TidbytrRuntime, type TidbytrRuntimeOptions } from "./runtime.js";
 
+declare module "fastify" {
+  interface FastifyInstance {
+    runtime: TidbytrRuntime;
+  }
+}
+
 interface BuildAppOptions extends Partial<TidbytrRuntimeOptions> {
   startScheduler?: boolean;
 }
@@ -41,7 +47,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     store: options.store,
     weatherProvider: options.weatherProvider,
     sportsProvider: options.sportsProvider,
-    transport: options.transport,
+    publisher: options.publisher,
     renderer: options.renderer,
     logger: app.log,
   });
@@ -90,11 +96,11 @@ export async function buildApp(options: BuildAppOptions = {}) {
   app.post("/api/actions/push", async (request, reply) => {
     try {
       const body = pushBodySchema.parse(request.body ?? {});
-      return await runtime.push(body.panelId);
+      return await runtime.publish(body.panelId);
     } catch (error) {
       return reply.code(400).send({
-        error: "Push failed",
-        message: error instanceof Error ? error.message : "Unknown push error",
+        error: "Publish failed",
+        message: error instanceof Error ? error.message : "Unknown publish error",
       });
     }
   });
@@ -128,6 +134,28 @@ export async function buildApp(options: BuildAppOptions = {}) {
       return reply.sendFile("index.html");
     });
   }
+
+  return app;
+}
+
+export async function buildDisplayApp(runtime: TidbytrRuntime) {
+  const app = Fastify({
+    logger: false,
+  });
+
+  app.get("/current.webp", async (_request, reply) => {
+    try {
+      const frame = await runtime.getCurrentFrameForPull();
+      return reply.header("Content-Type", "image/webp").header("Cache-Control", "no-store").send(frame);
+    } catch (error) {
+      return reply.code(503).header("Cache-Control", "no-store").send({
+        error: "Frame unavailable",
+        message: error instanceof Error ? error.message : "Unknown display error",
+      });
+    }
+  });
+
+  app.setNotFoundHandler((_request, reply) => reply.code(404).send({ error: "Not found" }));
 
   return app;
 }

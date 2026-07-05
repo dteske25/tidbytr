@@ -1,10 +1,7 @@
 configuration:
-  tidbyt_api_token:
-    name: Tidbyt API Token
-    description: Bearer token used to push images through the Tidbyt cloud API.
-  tidbyt_device_id:
-    name: Tidbyt Device ID
-    description: Target Tidbyt Gen 2 device ID.
+  display_base_url:
+    name: HDK Display Base URL
+    description: LAN URL for the read-only WebP feed, such as http://homeassistant.local:8788.
   timezone:
     name: Timezone
     description: IANA timezone used by the scheduler.
@@ -19,3 +16,4 @@ configuration:
     description: Contact string used as the NWS User-Agent.
 network:
   8787/tcp: Tidbytr dashboard (not required when using Ingress)
+  8788/tcp: Read-only HDK WebP feed for Tidbyt firmware polling

@@ -1,4 +1,4 @@
-import type { DisplayTransport, FrameBundle, PushResult, RuntimeConfig, SourceHealth } from "../../src/core/types.js";
+import type { FrameBundle, RuntimeConfig, SourceHealth } from "../../src/core/types.js";
 import type { Panel } from "../../src/core/types.js";
 import type { SportsSnapshot, WeatherSnapshot } from "../../src/core/panels.js";
 import type { DisplayRenderer } from "../../src/renderer/types.js";
@@ -8,11 +8,13 @@ import { defaultOptions } from "../../src/core/config.js";
 export function testConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return {
     ...defaultOptions(),
-    tidbytApiToken: "token-123",
-    tidbytDeviceId: "device-123",
+    displayBaseUrl: "http://homeassistant.local:8788",
     dataDir: "/tmp/tidbytr-test",
     host: "127.0.0.1",
     port: 0,
+    displayHost: "127.0.0.1",
+    displayPort: 0,
+    displayPollingWindowSeconds: 30,
     ...overrides,
   };
 }
@@ -39,27 +41,12 @@ export class FakeSportsProvider implements SnapshotProvider<SportsSnapshot> {
   }
 }
 
-export class FakeTransport implements DisplayTransport {
-  pushes: Array<{ frame: FrameBundle; options: Parameters<DisplayTransport["push"]>[1] }> = [];
-
-  async push(frame: FrameBundle, options: Parameters<DisplayTransport["push"]>[1]): Promise<PushResult> {
-    this.pushes.push({ frame, options });
-    return {
-      ok: true,
-      status: 200,
-      message: "ok",
-      attemptCount: 1,
-      pushedAt: new Date().toISOString(),
-    };
-  }
-}
-
 export class FakeRenderer implements DisplayRenderer {
   rendered: Panel[] = [];
 
   constructor(private readonly webp = Buffer.from("RIFF$\x00\x00\x00WEBPVP8 fake-tidbytr-preview")) {}
 
-  async render(panel: Panel, now = new Date()): Promise<FrameBundle> {
+  async render(panel: Panel, now = new Date(), _config?: RuntimeConfig): Promise<FrameBundle> {
     this.rendered.push(panel);
     return {
       panelId: panel.id,

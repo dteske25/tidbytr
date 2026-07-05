@@ -41,7 +41,7 @@ export interface SchedulerDecision {
   selectedPanelId: string | null;
   selectedPanelTitle: string | null;
   reason: string;
-  result: "selected" | "skipped" | "pushed" | "not-shown";
+  result: "selected" | "skipped" | "published" | "not-shown";
   skipped: Array<{ panelId: string; reason: string }>;
 }
 
@@ -53,27 +53,19 @@ export interface SourceHealth {
   detail?: string;
 }
 
-export interface PushResult {
+export interface PublishResult {
   ok: boolean;
   status: number;
   message: string;
   attemptCount: number;
-  pushedAt: string;
-}
-
-export interface DisplayTransport {
-  push(frame: FrameBundle, options: DisplayPushOptions): Promise<PushResult>;
-}
-
-export interface DisplayPushOptions {
-  apiToken: string;
-  deviceId: string;
-  installationId: string;
+  publishedAt: string;
+  renderedAt: string;
+  panelId: string;
+  framePath: string;
 }
 
 export interface HomeAssistantOptions {
-  tidbytApiToken: string;
-  tidbytDeviceId: string;
+  displayBaseUrl: string;
   timezone: string;
   latitude: number;
   longitude: number;
@@ -83,7 +75,6 @@ export interface HomeAssistantOptions {
   schedulerIntervalSeconds: number;
   refreshIntervalSeconds: number;
   quietHours: QuietHours | null;
-  installationId: string;
 }
 
 export interface QuietHours {
@@ -95,6 +86,9 @@ export interface RuntimeConfig extends HomeAssistantOptions {
   dataDir: string;
   host: string;
   port: number;
+  displayHost: string;
+  displayPort: number;
+  displayPollingWindowSeconds: number;
 }
 
 export interface SchedulerState {
@@ -114,10 +108,14 @@ export interface SchedulerRequest {
 
 export interface TidbytrStatus {
   display: {
+    delivery: "hdk-local-pull";
     width: 64;
     height: 32;
+    remoteUrl: string | null;
+    currentFrame: { panelId: string; renderedAt: string } | null;
     online: boolean;
-    lastPush: PushResult | null;
+    lastPublish: PublishResult | null;
+    lastPull: string | null;
     currentPanel: Panel | null;
   };
   config: SanitizedConfig;
@@ -131,6 +129,4 @@ export interface TidbytrStatus {
   };
 }
 
-export type SanitizedConfig = Omit<RuntimeConfig, "tidbytApiToken"> & {
-  tidbytApiToken: string;
-};
+export type SanitizedConfig = RuntimeConfig;

@@ -2,11 +2,12 @@ import path from "node:path";
 import type { FastifyBaseLogger } from "fastify";
 import { normalizeOptions, sanitizeConfig, writeRuntimeOptions } from "../core/config.js";
 import { buildPanels, type SportsSnapshot, type WeatherSnapshot } from "../core/panels.js";
+import { LocalDisplayPublisher } from "../core/publisher.js";
 import { choosePanel, markSkipped, setSourceEnabled, snoozeUntil } from "../core/scheduler.js";
 import type {
-  DisplayTransport,
   HomeAssistantOptions,
   Panel,
+  PublishResult,
   RuntimeConfig,
   SchedulerDecision,
   SourceHealth,
@@ -18,7 +19,6 @@ import type { DisplayRenderer } from "../renderer/types.js";
 import { TidbytrStore } from "../storage/store.js";
 import { NwsProvider } from "../providers/nws.js";
 import { EspnSportsProvider } from "../providers/sports.js";
-import { TidbytCloudTransport } from "../core/transport.js";
 
 export interface SnapshotProvider<TSnapshot> {
   getSnapshot(now?: Date): Promise<{ snapshot: TSnapshot; health: SourceHealth }>;
@@ -29,7 +29,7 @@ export interface TidbytrRuntimeOptions {
   store?: TidbytrStore;
   weatherProvider?: SnapshotProvider<WeatherSnapshot>;
   sportsProvider?: SnapshotProvider<SportsSnapshot>;
-  transport?: DisplayTransport;
+  publisher?: LocalDisplayPublisher;
   renderer?: DisplayRenderer;
   logger?: FastifyBaseLogger;
 }
@@ -39,7 +39,7 @@ export class TidbytrRuntime {
   private readonly store: TidbytrStore;
   private weatherProvider: SnapshotProvider<WeatherSnapshot>;
   private sportsProvider: SnapshotProvider<SportsSnapshot>;
-  private readonly transport: DisplayTransport;
+  private readonly publisher: LocalDisplayPublisher;
   private readonly renderer: DisplayRenderer;
   private readonly logger?: FastifyBaseLogger;
   private currentPanel: Panel | null = null;
@@ -66,7 +66,7 @@ export class TidbytrRuntime {
       new EspnSportsProvider({
         favoriteTeams: this.config.favoriteTeams,
       });
-    this.transport = options.transport ?? new TidbytCloudTransport();
+    this.publisher = options.publisher ?? new LocalDisplayPublisher({ dataDir: this.config.dataDir });
     this.renderer = options.renderer ?? createDefaultRenderer();
     this.logger = options.logger;
   }
@@ -103,16 +103,8 @@ export class TidbytrRuntime {
   }
 
   async updateConfig(input: unknown): Promise<ReturnType<typeof sanitizeConfig>> {
-    const existingToken = this.config.tidbytApiToken;
     const candidate = input as Partial<HomeAssistantOptions>;
-    const nextOptions = normalizeOptions({
-      ...this.config,
-      ...candidate,
-      tidbytApiToken:
-        candidate.tidbytApiToken === "configured" || candidate.tidbytApiToken === undefined
-          ? existingToken
-          : candidate.tidbytApiToken,
-    });
+    const nextOptions = normalizeOptions({ ...this.config, ...candidate });
 
     this.config = { ...this.config, ...nextOptions };
     this.store.setOptions(nextOptions);
@@ -145,13 +137,19 @@ export class TidbytrRuntime {
     const selected = panels.find((panel) => panel.id === decision.selectedPanelId) ?? null;
     this.currentPanel = selected;
     this.store.setSourceHealth(health);
+    const lastPublish = this.store.getLastPublish();
+    const lastPull = this.store.getLastPull();
 
     return {
       display: {
+        delivery: "hdk-local-pull",
         width: 64,
         height: 32,
-        online: Boolean(this.config.tidbytDeviceId && this.config.tidbytApiToken),
-        lastPush: this.store.getLastPush(),
+        remoteUrl: this.getRemoteUrl(),
+        currentFrame: this.getCurrentFrame(lastPublish),
+        online: this.isDisplayOnline(lastPull, now),
+        lastPublish,
+        lastPull,
         currentPanel: selected,
       },
       config: sanitizeConfig(this.config),
@@ -175,8 +173,7 @@ export class TidbytrRuntime {
     return (await this.renderer.render(panel, now, this.config)).webp;
   }
 
-  async push(panelId?: string, now = new Date()): Promise<{ decision: SchedulerDecision; panel: Panel | null }> {
-    this.requirePushConfig();
+  async publish(panelId?: string, now = new Date()): Promise<{ decision: SchedulerDecision; panel: Panel | null }> {
     const panels = await this.getPanels(now);
     const state = this.store.getSchedulerState(this.config.quietHours);
     const decision = choosePanel({
@@ -193,36 +190,55 @@ export class TidbytrRuntime {
       return { decision, panel: null };
     }
 
-    let pushedDecision: SchedulerDecision;
+    let publishedDecision: SchedulerDecision;
     try {
       const frame = await this.renderer.render(selected, now, this.config);
-      const result = await this.transport.push(frame, {
-        apiToken: this.config.tidbytApiToken,
-        deviceId: this.config.tidbytDeviceId,
-        installationId: this.config.installationId,
-      });
-      this.store.setLastPush(result);
-      pushedDecision = {
+      const result = await this.publisher.publish(frame);
+      this.store.setLastPublish(result);
+      publishedDecision = {
         ...decision,
-        result: result.ok ? "pushed" : "not-shown",
+        result: result.ok ? "published" : "not-shown",
         reason: result.ok ? decision.reason : result.message,
       };
     } catch (error) {
-      pushedDecision = {
+      publishedDecision = {
         ...decision,
         result: "not-shown",
-        reason: error instanceof Error ? error.message : "Render or push failed",
+        reason: error instanceof Error ? error.message : "Render or publish failed",
       };
-      this.store.addDecision(pushedDecision);
+      this.store.addDecision(publishedDecision);
       throw error;
     }
 
-    this.store.addDecision(pushedDecision);
-    if (pushedDecision.result === "pushed") {
+    this.store.addDecision(publishedDecision);
+    if (publishedDecision.result === "published") {
       this.currentPanel = selected;
     }
 
-    return { decision: pushedDecision, panel: selected };
+    return { decision: publishedDecision, panel: selected };
+  }
+
+  async push(panelId?: string, now = new Date()): Promise<{ decision: SchedulerDecision; panel: Panel | null }> {
+    return this.publish(panelId, now);
+  }
+
+  async getCurrentFrameForPull(now = new Date()): Promise<Buffer> {
+    let frame = await this.publisher.readCurrentFrame();
+    if (!frame) {
+      await this.publish(undefined, now);
+      frame = await this.publisher.readCurrentFrame();
+    }
+
+    if (!frame) {
+      throw new Error("No display frame is available");
+    }
+
+    this.recordPull(now);
+    return frame;
+  }
+
+  recordPull(now = new Date()): void {
+    this.store.setLastPull(now.toISOString());
   }
 
   async skip(panelId?: string, now = new Date()): Promise<SchedulerDecision> {
@@ -312,12 +328,6 @@ export class TidbytrRuntime {
     });
   }
 
-  private requirePushConfig(): void {
-    if (!this.config.tidbytApiToken || !this.config.tidbytDeviceId) {
-      throw new Error("Tidbyt API token and device ID are required to push");
-    }
-  }
-
   private scheduleNextPush(delayMs: number): void {
     if (this.schedulerStopped) {
       return;
@@ -339,11 +349,11 @@ export class TidbytrRuntime {
 
     this.schedulerRunning = true;
     try {
-      await this.push();
+      await this.publish();
     } catch (error) {
       this.logger?.warn(
         { error: error instanceof Error ? error.message : String(error) },
-        "Scheduled Tidbyt push failed",
+        "Scheduled Tidbytr publish failed",
       );
     } finally {
       this.schedulerRunning = false;
@@ -359,6 +369,29 @@ export class TidbytrRuntime {
     }
 
     return Math.max(0, Math.ceil((this.nextSchedulerRunAt - now.getTime()) / 1000));
+  }
+
+  private getRemoteUrl(): string | null {
+    return this.config.displayBaseUrl ? `${this.config.displayBaseUrl}/current.webp` : null;
+  }
+
+  private getCurrentFrame(lastPublish: PublishResult | null): { panelId: string; renderedAt: string } | null {
+    if (!lastPublish?.ok) {
+      return null;
+    }
+
+    return {
+      panelId: lastPublish.panelId,
+      renderedAt: lastPublish.renderedAt ?? lastPublish.publishedAt,
+    };
+  }
+
+  private isDisplayOnline(lastPull: string | null, now: Date): boolean {
+    if (!lastPull) {
+      return false;
+    }
+
+    return now.getTime() - new Date(lastPull).getTime() <= this.config.displayPollingWindowSeconds * 1000;
   }
 }
 
