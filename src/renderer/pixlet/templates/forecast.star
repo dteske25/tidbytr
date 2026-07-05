@@ -3,41 +3,45 @@ load("render.star", "render")
 
 def main(config):
     data = json.decode(config.get("payload_json") or "{}")
-    forecast = data.get("payload") or {}
-    temp = str(forecast.get("temperature") or "--") + "F"
-    high = forecast.get("high") or "-"
-    low = forecast.get("low") or "-"
-    summary = forecast.get("shortForecast") or "Forecast unavailable"
+    display = data.get("display") or {}
+    temp = display.get("temp") or "--F"
+    high_low = display.get("highLow") or "H- L-"
+    wind = display.get("wind") or ""
+    summary = display.get("summary") or "Forecast unavailable"
 
     return render.Root(
         child = render.Stack(
             children = [
+                render.Box(width = 64, height = 1, color = "#036"),
                 render.Padding(
-                    pad = (5, 5, 0, 0),
-                    child = render.Circle(diameter = 10, color = "#fc0"),
+                    pad = (4, 4, 0, 0),
+                    child = render.Circle(diameter = 9, color = "#fc0"),
                 ),
                 render.Padding(
-                    pad = (12, 16, 0, 0),
-                    child = render.Box(width = 20, height = 5, color = "#eef"),
+                    pad = (11, 13, 0, 0),
+                    child = render.Box(width = 17, height = 5, color = "#eef"),
                 ),
                 render.Padding(
-                    pad = (31, 4, 0, 0),
+                    pad = (31, 3, 0, 0),
                     child = render.Text(content = temp, font = "6x13", color = "#fff"),
                 ),
                 render.Padding(
-                    pad = (34, 18, 0, 0),
-                    child = render.Text(content = "H%s L%s" % (high, low), color = "#999"),
+                    pad = (31, 17, 0, 0),
+                    child = render.Text(content = high_low, color = "#9cf"),
+                ),
+                render.Padding(
+                    pad = (3, 21, 0, 0),
+                    child = render.Text(content = wind, color = "#777"),
                 ),
                 render.Padding(
                     pad = (3, 25, 0, 0),
-                    child = render.WrappedText(
-                        content = summary,
+                    child = render.Marquee(
                         width = 58,
-                        height = 7,
-                        color = "#28f",
+                        child = render.Text(content = summary, color = "#28f"),
+                        offset_start = 0,
+                        offset_end = 58,
                     ),
                 ),
             ],
         ),
     )
-

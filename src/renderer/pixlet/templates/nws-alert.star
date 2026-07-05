@@ -3,10 +3,11 @@ load("render.star", "render")
 
 def main(config):
     data = json.decode(config.get("payload_json") or "{}")
-    alert = data.get("payload") or {}
-    severity = (alert.get("severity") or "alert").upper()
-    event = alert.get("event") or "NWS Alert"
-    headline = alert.get("headline") or ""
+    display = data.get("display") or {}
+    severity = display.get("severity") or "ALERT"
+    event = display.get("event") or "NWS Alert"
+    headline = display.get("headline") or ""
+    message = display.get("message") or (event + " " + headline)
     color = "#f00"
     if severity == "WATCH":
         color = "#fa0"
@@ -33,13 +34,17 @@ def main(config):
                 ),
                 render.Padding(
                     pad = (3, 3, 0, 0),
-                    child = render.Text(content = severity, color = color),
+                    child = render.Text(content = severity[:7], color = color),
+                ),
+                render.Padding(
+                    pad = (40, 3, 0, 0),
+                    child = render.Text(content = "NWS", color = "#999"),
                 ),
                 render.Padding(
                     pad = (3, 11, 0, 0),
                     child = render.Marquee(
                         width = 58,
-                        child = render.Text(content = event + " " + headline, color = "#fff"),
+                        child = render.Text(content = message, color = "#fff"),
                         offset_start = 0,
                         offset_end = 58,
                     ),
@@ -56,4 +61,3 @@ def main(config):
             ],
         ),
     )
-

@@ -1,11 +1,11 @@
 load("encoding/json.star", "json")
 load("render.star", "render")
-load("time.star", "time")
-
 def main(config):
     data = json.decode(config.get("payload_json") or "{}")
-    timezone = data.get("timezone") or config.get("timezone") or "UTC"
-    now = time.now().in_location(timezone)
+    display = data.get("display") or {}
+    time_text = display.get("time") or "--:--"
+    blink_time = display.get("blinkTime") or time_text
+    date_text = display.get("date") or "--- --"
 
     return render.Root(
         delay = 500,
@@ -13,17 +13,17 @@ def main(config):
             children = [
                 render.Box(width = 64, height = 2, color = "#0b5"),
                 render.Padding(
-                    pad = (5, 7, 0, 0),
+                    pad = (6, 5, 0, 0),
                     child = render.Animation(
                         children = [
-                            render.Text(content = now.format("15:04"), font = "6x13", color = "#fff"),
-                            render.Text(content = now.format("15 04"), font = "6x13", color = "#fff"),
+                            render.Text(content = time_text, font = "6x13", color = "#fff"),
+                            render.Text(content = blink_time, font = "6x13", color = "#fff"),
                         ],
                     ),
                 ),
                 render.Padding(
-                    pad = (15, 23, 0, 0),
-                    child = render.Text(content = now.format("Jan 02"), color = "#28f"),
+                    pad = (15, 22, 0, 0),
+                    child = render.Text(content = date_text, color = "#28f"),
                 ),
                 render.Padding(
                     pad = (2, 29, 0, 0),
@@ -32,4 +32,3 @@ def main(config):
             ],
         ),
     )
-

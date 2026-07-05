@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+- Add deterministic Pixlet display payloads so screen rendering can be tested reliably.
+- Add renderer fixture tooling for reviewing panel WebP and PNG output.
+- Add optional Pixlet visual layout tests for clock, forecast, NWS alert, and live score panels.
+- Migrate upcoming game, live score, and final score panels to Pixlet templates.
+
 ## 0.2.0
 
 - Add a Pixlet-backed renderer for clock, forecast, and NWS alert panels.
