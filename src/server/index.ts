@@ -19,3 +19,12 @@ try {
   await displayApp.close();
   process.exit(1);
 }
+
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => {
+    void app.close().then(() => process.exit(0), (error: unknown) => {
+      app.log.error(error);
+      process.exit(1);
+    });
+  });
+}

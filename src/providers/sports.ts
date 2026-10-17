@@ -1,3 +1,4 @@
+import { requestJson } from "./http.js";
 import type { SportsGame, SportsSnapshot } from "../core/panels.js";
 import type { SourceHealth } from "../core/types.js";
 
@@ -6,6 +7,8 @@ export interface SportsProviderOptions {
   fetchImpl?: typeof fetch;
   baseUrl?: string;
   cacheTtlMs?: number;
+  initialSnapshot?: SportsSnapshot;
+  timeoutMs?: number;
 }
 
 interface EspnScoreboard {
@@ -36,19 +39,24 @@ export class EspnSportsProvider {
   private readonly fetchImpl: typeof fetch;
   private readonly baseUrl: string;
   private readonly cacheTtlMs: number;
-  private cached: { expiresAt: number; snapshot: SportsSnapshot } | null = null;
+  private cached: { expiresAt: number; snapshot: SportsSnapshot; health: SourceHealth } | null = null;
+  private readonly leagueSnapshots = new Map<string, SportsGame[]>();
 
   constructor(private readonly options: SportsProviderOptions) {
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.baseUrl = options.baseUrl ?? "https://site.api.espn.com/apis/site/v2/sports";
-    this.cacheTtlMs = options.cacheTtlMs ?? 60_000;
+    this.cacheTtlMs = options.cacheTtlMs ?? 30_000;
+    for (const game of options.initialSnapshot?.games ?? []) {
+      const league = game.league ?? "legacy";
+      this.leagueSnapshots.set(league, [...(this.leagueSnapshots.get(league) ?? []), game]);
+    }
   }
 
   async getSnapshot(now = new Date()): Promise<{ snapshot: SportsSnapshot; health: SourceHealth }> {
     if (this.cached && this.cached.expiresAt > now.getTime()) {
       return {
         snapshot: this.cached.snapshot,
-        health: { id: "sports", label: "Favorite teams", status: "ok", checkedAt: now.toISOString(), detail: "cache" },
+        health: { ...this.cached.health, detail: this.cached.health.detail ?? "cache" },
       };
     }
 
@@ -59,45 +67,32 @@ export class EspnSportsProvider {
       };
     }
 
-    try {
-      const scoreboards = await Promise.all([
-        this.getJson<EspnScoreboard>(`${this.baseUrl}/football/nfl/scoreboard`),
-        this.getJson<EspnScoreboard>(`${this.baseUrl}/basketball/nba/scoreboard`),
-        this.getJson<EspnScoreboard>(`${this.baseUrl}/baseball/mlb/scoreboard`),
-        this.getJson<EspnScoreboard>(`${this.baseUrl}/hockey/nhl/scoreboard`),
-      ]);
-      const favoriteSet = new Set(this.options.favoriteTeams.map((team) => team.toUpperCase()));
-      const games = scoreboards.flatMap((scoreboard) => parseGames(scoreboard, favoriteSet));
-
-      const snapshot = { games };
-      this.cached = { snapshot, expiresAt: now.getTime() + this.cacheTtlMs };
-
-      return {
-        snapshot,
-        health: { id: "sports", label: "Favorite teams", status: "ok", checkedAt: now.toISOString() },
-      };
-    } catch (error) {
-      return {
-        snapshot: { games: [] },
-        health: {
-          id: "sports",
-          label: "Favorite teams",
-          status: "degraded",
-          checkedAt: now.toISOString(),
-          detail: error instanceof Error ? error.message : "Unknown sports provider error",
-        },
-      };
-    }
+    const favoriteSet = new Set(this.options.favoriteTeams.map((team) => team.toUpperCase()));
+    const errors: string[] = [];
+    await Promise.all(["football/nfl", "basketball/nba", "baseball/mlb", "hockey/nhl"].map(async (league) => {
+      try {
+        const scoreboard = await this.getJson<EspnScoreboard>(`${this.baseUrl}/${league}/scoreboard`);
+        if (!Array.isArray(scoreboard.events)) throw new Error("Scoreboard has no events");
+        const previous = this.leagueSnapshots.get(league) ?? [];
+        const games = parseGames(scoreboard, favoriteSet).map((game) => ({
+          ...game, league, observedAt: now.toISOString(),
+          completedAt: game.status === "final" ? previous.find((old) => old.id === game.id)?.completedAt ?? now.toISOString() : undefined,
+        }));
+        this.leagueSnapshots.set(league, games);
+        this.leagueSnapshots.delete("legacy");
+      } catch (error) { errors.push(`${league}: ${error instanceof Error ? error.message : String(error)}`); }
+    }));
+    const snapshot = { games: [...this.leagueSnapshots.values()].flat() };
+    const health: SourceHealth = { id: "sports", label: "Favorite teams", status: errors.length ? "degraded" : "ok", checkedAt: now.toISOString(),
+      lastSuccessAt: snapshot.games.map((game) => game.observedAt ?? "").sort().at(-1) || undefined,
+      detail: errors.join("; ") || undefined };
+    this.cached = { snapshot, health, expiresAt: now.getTime() + this.cacheTtlMs };
+    return { snapshot, health };
+  }
+  private getJson<T>(url: string): Promise<T> {
+    return requestJson(this.fetchImpl, url, { Accept: "application/json" }, this.options.timeoutMs);
   }
 
-  private async getJson<T>(url: string): Promise<T> {
-    const response = await this.fetchImpl(url, { headers: { Accept: "application/json" } });
-    if (!response.ok) {
-      throw new Error(`Sports request failed ${response.status} for ${url}`);
-    }
-
-    return (await response.json()) as T;
-  }
 }
 
 function parseGames(scoreboard: EspnScoreboard, favoriteSet: Set<string>): SportsGame[] {

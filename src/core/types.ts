@@ -1,3 +1,4 @@
+import type { ScreenPolicy } from "./policy.js";
 export type PanelKind =
   | "clock"
   | "nws-alert"
@@ -32,6 +33,7 @@ export interface Panel {
   ttlSeconds: number;
   expiresAt: string;
   critical?: boolean;
+  version?: string;
   payload: unknown;
 }
 
@@ -51,6 +53,7 @@ export interface SourceHealth {
   status: SourceStatus;
   checkedAt: string;
   detail?: string;
+  lastSuccessAt?: string;
 }
 
 export interface PublishResult {
@@ -74,6 +77,7 @@ export interface HomeAssistantOptions {
   logLevel: "trace" | "debug" | "info" | "warn" | "error";
   schedulerIntervalSeconds: number;
   refreshIntervalSeconds: number;
+  screenPolicy: ScreenPolicy;
   quietHours: QuietHours | null;
 }
 
@@ -91,11 +95,28 @@ export interface RuntimeConfig extends HomeAssistantOptions {
   displayPollingWindowSeconds: number;
 }
 
+export interface DisplayHistory {
+  lastShownAt: string;
+  version: string;
+  showCount: number;
+}
+
+export interface PublishedFrame {
+  panel: Panel;
+  renderedAt: string;
+  validUntil: string;
+  sha256: string;
+  degradedReason?: string;
+}
+
 export interface SchedulerState {
   snoozedUntil: string | null;
   skippedPanelIds: string[];
   disabledSources: SourceId[];
   quietHours: QuietHours | null;
+  history: Record<string, DisplayHistory>;
+  showing: { panelId: string; startedAt: string; version: string } | null;
+  manualHold: { panelId: string; until: string } | null;
 }
 
 export interface SchedulerRequest {
@@ -103,6 +124,7 @@ export interface SchedulerRequest {
   now: Date;
   state: SchedulerState;
   manualPanelId?: string;
+  policy?: ScreenPolicy;
   timeZone?: string;
 }
 
@@ -117,6 +139,8 @@ export interface TidbytrStatus {
     lastPublish: PublishResult | null;
     lastPull: string | null;
     currentPanel: Panel | null;
+    fresh: boolean;
+    degradedReason: string | null;
   };
   config: SanitizedConfig;
   sourceHealth: SourceHealth[];
@@ -126,6 +150,9 @@ export interface TidbytrStatus {
     skippedPanelIds: string[];
     disabledSources: SourceId[];
     nextDecisionInSeconds: number;
+    nextPanel: Panel | null;
+    nextReason: string;
+    manualHold: SchedulerState["manualHold"];
   };
 }
 

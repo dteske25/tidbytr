@@ -15,7 +15,7 @@ describe("api", () => {
     const panels = await app.inject({ method: "GET", url: "/api/panels" });
 
     expect(status.statusCode).toBe(200);
-    expect(status.json().display.currentPanel).toBeTruthy();
+    expect(status.json().scheduler.nextPanel).toBeTruthy();
     expect(panels.json().panels.length).toBeGreaterThan(1);
     await app.close();
   });
@@ -134,6 +134,7 @@ describe("api", () => {
 async function makeApp(configOverrides = {}, renderer: DisplayRenderer = new FakeRenderer()) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "tidbytr-api-test-"));
   const app = await buildApp({
+    startScheduler: "schedulerIntervalSeconds" in configOverrides,
     config: testConfig({ dataDir, ...configOverrides }),
     store: new TidbytrStore(":memory:"),
     weatherProvider: new FakeWeatherProvider({
@@ -146,6 +147,7 @@ async function makeApp(configOverrides = {}, renderer: DisplayRenderer = new Fak
     publisher: new LocalDisplayPublisher({ dataDir }),
     renderer,
   });
+  await app.runtime.refreshSources();
   return Object.assign(app, { dataDir });
 }
 

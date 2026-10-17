@@ -613,3 +613,8 @@ h2 {
     display: none;
   }
 }
+
+.policy-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid #e2e8f0; }
+.policy-row > span { width: 100%; }
+.policy-row input { width: 64px; padding: 4px; color: #0f172a; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 4px; }
+.rail-section form > .outline-action { margin-top: 12px; border: 1px solid #cbd5e1; padding: 8px 12px; border-radius: 4px; background: white; color: #0f172a; }
