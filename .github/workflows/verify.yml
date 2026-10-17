@@ -1,0 +1,26 @@
+name: Verify
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: corepack enable && pnpm install --frozen-lockfile
+      - name: Install pinned Pixlet
+        shell: bash
+        run: |
+          curl -fsSL https://github.com/tidbyt/pixlet/releases/download/v0.34.0/pixlet_0.34.0_linux_amd64.tar.gz -o /tmp/pixlet_0.34.0_linux_amd64.tar.gz
+          curl -fsSL https://github.com/tidbyt/pixlet/releases/download/v0.34.0/checksums.txt -o /tmp/checksums.txt
+          cd /tmp
+          rg '  pixlet_0.34.0_linux_amd64.tar.gz$' checksums.txt | sha256sum -c -
+          sudo tar -xzf pixlet_0.34.0_linux_amd64.tar.gz -C /usr/local/bin pixlet
+      - run: pnpm verify:release
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Build supported add-on architectures
+        run: docker buildx build --platform linux/amd64,linux/arm64 ./tidbytr

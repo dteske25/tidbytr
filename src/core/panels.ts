@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
 import type { AlertSeverity, Panel, RuntimeConfig } from "./types.js";
 
 export interface WeatherSnapshot {
   alerts: WeatherAlert[];
+  alertsObservedAt?: string;
+  forecastObservedAt?: string;
   forecast: {
     temperature: number;
     shortForecast: string;
@@ -32,27 +35,34 @@ export interface SportsGame {
   teamScore?: number;
   opponentScore?: number;
   period?: string;
+  observedAt?: string;
+  completedAt?: string;
+  league?: string;
 }
 
 export function buildPanels(config: RuntimeConfig, weather: WeatherSnapshot, sports: SportsSnapshot, now = new Date()): Panel[] {
   const createdAt = now.toISOString();
   const panels: Panel[] = [clockPanel(createdAt, config.timezone)];
 
-  if (weather.forecast) {
+  const forecastTime = weather.forecastObservedAt ?? createdAt;
+  if (weather.forecast && Date.parse(forecastTime) + 900_000 > now.getTime()) {
     panels.push({
       id: "forecast",
       kind: "forecast",
       source: "nws",
       title: "NWS forecast",
       priority: 40,
-      createdAt,
+      createdAt: forecastTime,
       ttlSeconds: 900,
-      expiresAt: addSeconds(now, 900),
+      expiresAt: addSeconds(new Date(forecastTime), 900),
       payload: weather.forecast,
     });
   }
 
   for (const alert of weather.alerts) {
+    const observedAt = weather.alertsObservedAt ?? createdAt;
+    const validUntil = Math.min(Date.parse(alert.expiresAt), Date.parse(observedAt) + 900_000);
+    if (!Number.isFinite(validUntil) || validUntil <= now.getTime()) continue;
     panels.push({
       id: `nws-${safeId(alert.id)}`,
       kind: "nws-alert",
@@ -61,17 +71,21 @@ export function buildPanels(config: RuntimeConfig, weather: WeatherSnapshot, spo
       priority: alert.severity === "warning" ? 100 : alert.severity === "watch" ? 90 : 70,
       createdAt,
       ttlSeconds: Math.max(60, Math.floor((Date.parse(alert.expiresAt) - now.getTime()) / 1000)),
-      expiresAt: alert.expiresAt,
+      expiresAt: new Date(validUntil).toISOString(),
       critical: alert.severity === "warning" || alert.severity === "watch",
       payload: alert,
     });
   }
 
   for (const game of sports.games) {
-    panels.push(gamePanel(game, createdAt, now));
+    const observedAt = game.observedAt ?? createdAt;
+    if (!Number.isFinite(Date.parse(game.startsAt))) continue;
+    if (game.status === "scheduled" && (Date.parse(game.startsAt) - now.getTime() > 86400_000 || Date.parse(game.startsAt) < now.getTime() - 3600_000)) continue;
+    const candidate = gamePanel(game, observedAt, now);
+    if (Date.parse(candidate.expiresAt) > now.getTime()) panels.push(candidate);
   }
 
-  return panels;
+  return panels.map((panel) => ({ ...panel, priority: config.screenPolicy.priorities[panel.kind] - (panel.kind === "nws-alert" ? 100 - panel.priority : 0), version: panelVersion(panel) }));
 }
 
 export function clockPanel(createdAt = new Date().toISOString(), timezone = "UTC"): Panel {
@@ -100,7 +114,7 @@ function gamePanel(game: SportsGame, createdAt: string, now: Date): Panel {
       priority: 85,
       createdAt,
       ttlSeconds: 90,
-      expiresAt: addSeconds(now, 90),
+      expiresAt: addSeconds(new Date(createdAt), 90),
       payload: game,
     };
   }
@@ -114,7 +128,7 @@ function gamePanel(game: SportsGame, createdAt: string, now: Date): Panel {
       priority: 65,
       createdAt,
       ttlSeconds: 3600,
-      expiresAt: addSeconds(now, 3600),
+      expiresAt: addSeconds(new Date(game.completedAt ?? createdAt), 3600),
       payload: game,
     };
   }
@@ -127,7 +141,7 @@ function gamePanel(game: SportsGame, createdAt: string, now: Date): Panel {
     priority: 45,
     createdAt,
     ttlSeconds: 1800,
-    expiresAt: addSeconds(now, 1800),
+    expiresAt: addSeconds(new Date(createdAt), 1800),
     payload: game,
   };
 }
@@ -138,4 +152,11 @@ function addSeconds(date: Date, seconds: number): string {
 
 function safeId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 80);
+}
+
+export function panelVersion(panel: Panel): string {
+  const payload = panel.kind === "clock" ? panel.payload : panel.source === "sports"
+    ? (({ id, teamScore, opponentScore, status }: SportsGame) => ({ id, teamScore, opponentScore, status }))(panel.payload as SportsGame)
+    : panel.payload;
+  return createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 16);
 }

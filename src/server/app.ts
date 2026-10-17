@@ -20,6 +20,7 @@ interface BuildAppOptions extends Partial<TidbytrRuntimeOptions> {
 
 const pushBodySchema = z.object({
   panelId: z.string().optional(),
+  holdSeconds: z.coerce.number().int().min(20).max(3600).default(60),
 });
 
 const skipBodySchema = z.object({
@@ -54,15 +55,25 @@ export async function buildApp(options: BuildAppOptions = {}) {
 
   app.decorate("runtime", runtime);
   app.addHook("onClose", async () => {
-    runtime.close();
+    await runtime.close();
   });
   if (options.startScheduler !== false) {
     runtime.startScheduler();
   }
 
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof z.ZodError) return reply.code(400).send({ error: "Invalid request", message: error.message });
+    app.log.error(error);
+    return reply.code(500).send({ error: "Request failed", message: error instanceof Error ? error.message : "Unknown error" });
+  });
   await app.register(cors, { origin: true });
 
   app.get("/api/status", async () => runtime.getStatus());
+  app.get("/api/display/current.webp", async (_request, reply) => {
+    const frame = await runtime.getPublishedPreview();
+    if (!frame) return reply.code(404).send({ error: "No frame published yet" });
+    return reply.header("Content-Type", "image/webp").header("Cache-Control", "no-store").send(frame);
+  });
   app.get("/api/config", async () => runtime.getEditableConfig());
   app.put("/api/config", async (request, reply) => {
     try {
@@ -96,7 +107,9 @@ export async function buildApp(options: BuildAppOptions = {}) {
   app.post("/api/actions/push", async (request, reply) => {
     try {
       const body = pushBodySchema.parse(request.body ?? {});
-      return await runtime.publish(body.panelId);
+      const result = await runtime.publish(body.panelId, new Date(), body.holdSeconds);
+      if (body.panelId && result.decision.result !== "published") return reply.code(409).send({ ...result, error: "Show was superseded", message: result.decision.reason });
+      return result;
     } catch (error) {
       return reply.code(400).send({
         error: "Publish failed",

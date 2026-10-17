@@ -3,6 +3,7 @@ import type { Panel } from "../../src/core/types.js";
 import type { SportsSnapshot, WeatherSnapshot } from "../../src/core/panels.js";
 import type { DisplayRenderer } from "../../src/renderer/types.js";
 import type { SnapshotProvider } from "../../src/server/runtime.js";
+import { SharpRenderer } from "../../src/renderer/renderer.js";
 import { defaultOptions } from "../../src/core/config.js";
 
 export function testConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
@@ -44,7 +45,7 @@ export class FakeSportsProvider implements SnapshotProvider<SportsSnapshot> {
 export class FakeRenderer implements DisplayRenderer {
   rendered: Panel[] = [];
 
-  constructor(private readonly webp = Buffer.from("RIFF$\x00\x00\x00WEBPVP8 fake-tidbytr-preview")) {}
+  constructor(private readonly webp?: Buffer) {}
 
   async render(panel: Panel, now = new Date(), _config?: RuntimeConfig): Promise<FrameBundle> {
     this.rendered.push(panel);
@@ -54,7 +55,7 @@ export class FakeRenderer implements DisplayRenderer {
       height: 32,
       mimeType: "image/webp",
       encoding: "webp",
-      webp: this.webp,
+      webp: this.webp ?? (await new SharpRenderer().render(panel, now, _config ?? testConfig())).webp,
       renderedAt: now.toISOString(),
     };
   }

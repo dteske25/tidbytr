@@ -2,15 +2,28 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import { DEFAULT_SCREEN_POLICY } from "./policy.js";
 import type { HomeAssistantOptions, RuntimeConfig, SanitizedConfig } from "./types.js";
 
 const timeStringSchema = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:mm in 24-hour time");
 
+const kinds = ["clock", "nws-alert", "forecast", "upcoming-game", "live-score", "final-score"] as const;
+const prioritiesSchema = z.object(Object.fromEntries(kinds.map((kind) => [kind, z.number().int().min(0).max(100).default(DEFAULT_SCREEN_POLICY.priorities[kind])])) as Record<typeof kinds[number], z.ZodDefault<z.ZodNumber>>);
+const cooldownSchema = z.object(Object.fromEntries(kinds.map((kind) => [kind, z.number().int().min(kind === "clock" ? 0 : 20).max(3600).default(DEFAULT_SCREEN_POLICY.cooldownSeconds[kind])])) as Record<typeof kinds[number], z.ZodDefault<z.ZodNumber>>);
+const screenPolicySchema = z.object({
+  minimumDwellSeconds: z.number().int().min(20).max(120).default(20),
+  priorities: prioritiesSchema.default(DEFAULT_SCREEN_POLICY.priorities),
+  cooldownSeconds: cooldownSchema.default(DEFAULT_SCREEN_POLICY.cooldownSeconds),
+}).default(DEFAULT_SCREEN_POLICY);
+
 export const homeAssistantOptionsSchema = z.object({
   displayBaseUrl: z.string().default(""),
-  timezone: z.string().min(1).default("America/Chicago"),
+  screenPolicy: screenPolicySchema,
+  timezone: z.string().refine((value) => {
+    try { new Intl.DateTimeFormat("en-US", { timeZone: value }); return true; } catch { return false; }
+  }, "Expected a valid IANA timezone").default("America/Chicago"),
   latitude: z.coerce.number().min(-90).max(90),
   longitude: z.coerce.number().min(-180).max(180),
   nwsContact: z.string().min(3, "NWS contact/User-Agent is required"),
@@ -39,6 +52,7 @@ export const runtimeConfigSchema = homeAssistantOptionsSchema.extend({
 export function defaultOptions(): HomeAssistantOptions {
   return {
     displayBaseUrl: "",
+    screenPolicy: structuredClone(DEFAULT_SCREEN_POLICY),
     timezone: process.env.TZ || "America/Chicago",
     latitude: 39.0997,
     longitude: -94.5786,
@@ -110,7 +124,10 @@ export function configFilePath(dataDir: string): string {
 
 export function writeRuntimeOptions(dataDir: string, options: HomeAssistantOptions): void {
   ensureDataDir(dataDir);
-  fs.writeFileSync(configFilePath(dataDir), `${JSON.stringify(options, null, 2)}${os.EOL}`);
+  const destination = configFilePath(dataDir);
+  const temporary = `${destination}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(options, null, 2)}${os.EOL}`);
+  fs.renameSync(temporary, destination);
 }
 
 function readJsonFile(filePath: string): Record<string, unknown> {

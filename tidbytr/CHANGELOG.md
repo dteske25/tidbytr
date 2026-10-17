@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- Add configurable priorities, dwell/cooldown rules, meaningful-change scheduling, and display history.
+- Refresh providers independently with bounded requests and partial failure handling.
+- Reject stale, corrupt, and superseded frames; automatically render a fresh clock fallback.
+- Apply actions immediately, consume skips, expire manual holds, and preserve dashboard settings on restart.
+- Separate published screens, previews, next candidates, freshness, and polling status.
+- Bundle reviewed source for HA builds and require real Pixlet integration in release checks.
+
 ## 0.4.0
 
 - Replace Tidbyt cloud push delivery with HDK local pull from `/current.webp`.

@@ -14,6 +14,9 @@ const config: RuntimeConfig = {
   dataDir: "/tmp/tidbytr-fixtures",
   host: "127.0.0.1",
   port: 0,
+  displayHost: "127.0.0.1",
+  displayPort: 0,
+  displayPollingWindowSeconds: 30,
   timezone: "America/Chicago",
 };
 

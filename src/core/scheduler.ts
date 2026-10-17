@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import type { Panel, SchedulerDecision, SchedulerRequest, SchedulerState, SourceId } from "./types.js";
 
-const CRITICAL_KINDS = new Set(["nws-alert"]);
+import { DEFAULT_SCREEN_POLICY } from "./policy.js";
 
 export function defaultSchedulerState(quietHours = null as SchedulerState["quietHours"]): SchedulerState {
   return {
@@ -9,6 +9,9 @@ export function defaultSchedulerState(quietHours = null as SchedulerState["quiet
     skippedPanelIds: [],
     disabledSources: [],
     quietHours,
+    history: {},
+    showing: null,
+    manualHold: null,
   };
 }
 
@@ -16,46 +19,67 @@ export function choosePanel(request: SchedulerRequest): SchedulerDecision {
   const skipped: SchedulerDecision["skipped"] = [];
   const now = request.now;
   const quietActive = isQuietHour(now, request.timeZone ?? "UTC", request.state.quietHours);
-  const manualPanel = request.manualPanelId
-    ? request.panels.find((panel) => panel.id === request.manualPanelId)
-    : undefined;
-
-  if (manualPanel && !isExpired(manualPanel, now)) {
-    return decision(now, manualPanel, "Manual show requested", "selected", skipped);
-  }
-
-  if (request.manualPanelId && !manualPanel) {
-    skipped.push({ panelId: request.manualPanelId, reason: "Manual panel not found" });
-  }
-
-  const filtered = request.panels.filter((panel) => {
+  const policy = request.policy ?? DEFAULT_SCREEN_POLICY;
+  const eligible = request.panels.filter((panel) => {
     const reason = rejectionReason(panel, request.state, now, quietActive);
-    if (reason) {
-      skipped.push({ panelId: panel.id, reason });
-      return false;
-    }
-
-    return true;
+    if (reason) skipped.push({ panelId: panel.id, reason });
+    return !reason;
   });
-
-  const sorted = filtered.toSorted((a, b) => {
-    if (b.priority !== a.priority) {
-      return b.priority - a.priority;
-    }
-
-    return Date.parse(a.createdAt) - Date.parse(b.createdAt);
+  const history = request.state.history;
+  const current = eligible.find((panel) => panel.id === request.state.showing?.panelId);
+  const dwellActive = current && now.getTime() - Date.parse(request.state.showing!.startedAt) < policy.minimumDwellSeconds * 1000;
+  const critical = eligible.filter(isCritical).toSorted((a, b) => {
+    const aLast = history[a.id]?.lastShownAt;
+    const bLast = history[b.id]?.lastShownAt;
+    return (aLast ? Date.parse(aLast) : -Infinity) - (bLast ? Date.parse(bLast) : -Infinity) || b.priority - a.priority || a.id.localeCompare(b.id);
   });
-
-  const selected = sorted[0] ?? null;
-  if (!selected) {
-    return decision(now, null, "No eligible panels", "not-shown", skipped);
+  if (critical.length) {
+    const urgent = critical.find((panel) => !history[panel.id] || history[panel.id]?.version !== panel.version);
+    const selected = urgent && (!current?.critical || urgent.priority >= current.priority) ? urgent
+      : dwellActive && current?.critical ? current : critical[0]!;
+    return decision(now, selected, "Critical alert interrupt", "selected", skipped);
   }
+  const hold = request.state.manualHold;
+  const manualId = request.manualPanelId ?? (hold && Date.parse(hold.until) > now.getTime() ? hold.panelId : undefined);
+  const manual = request.panels.find((panel) => panel.id === manualId && !isExpired(panel, now) && !request.state.disabledSources.includes(panel.source));
+  if (manual) return decision(now, manual, "Manual show requested", "selected", skipped);
+  if (request.manualPanelId) skipped.push({ panelId: request.manualPanelId, reason: "Manual panel unavailable" });
+  if (dwellActive && current) return decision(now, current, "Minimum display time", "selected", skipped);
+  const ready = eligible.filter((panel) => {
+    const last = history[panel.id];
+    if (panel.kind === "clock" || !last || last.version !== panel.version) return true;
+    const elapsed = now.getTime() - Date.parse(last.lastShownAt);
+    if (elapsed >= policy.cooldownSeconds[panel.kind] * 1000) return true;
+    skipped.push({ panelId: panel.id, reason: "Repeat cooldown" });
+    return false;
+  });
+  const sorted = ready.toSorted((a, b) => {
+    const score = (panel: Panel) => panel.priority + Math.min(200, Math.max(0,
+      (now.getTime() - Date.parse(history[panel.id]?.lastShownAt ?? panel.createdAt)) / 1000));
+    return score(b) - score(a) || a.id.localeCompare(b.id);
+  });
+  const selected = sorted[0] ?? null;
+  return decision(now, selected, selected ? selectionReason(selected) : "No eligible panels", selected ? "selected" : "not-shown", skipped);
+}
 
-  return decision(now, selected, selectionReason(selected), "selected", skipped);
+/** Commit display history only after successful publication, never on status reads. */
+export function recordShown(state: SchedulerState, panel: Panel, now: Date): SchedulerState {
+  const version = panel.version ?? "";
+  const continuing = state.showing?.panelId === panel.id && state.showing.version === version;
+  const previous = state.history[panel.id];
+  const activeHistory = Object.fromEntries(Object.entries(state.history)
+    .filter(([, entry]) => now.getTime() - Date.parse(entry.lastShownAt) < 7 * 86400_000));
+  return {
+    ...state, skippedPanelIds: [],
+    manualHold: state.manualHold && Date.parse(state.manualHold.until) > now.getTime() ? state.manualHold : null,
+    showing: continuing ? state.showing : { panelId: panel.id, startedAt: now.toISOString(), version },
+    history: { ...activeHistory, [panel.id]: { lastShownAt: now.toISOString(), version, showCount: (previous?.showCount ?? 0) + (continuing ? 0 : 1) } },
+  };
 }
 
 export function isExpired(panel: Panel, now: Date): boolean {
-  return Date.parse(panel.expiresAt) <= now.getTime();
+  const expiry = Date.parse(panel.expiresAt);
+  return !Number.isFinite(expiry) || expiry <= now.getTime();
 }
 
 export function isQuietHour(now: Date, timeZone: string, quietHours: SchedulerState["quietHours"]): boolean {
@@ -140,7 +164,7 @@ function rejectionReason(panel: Panel, state: SchedulerState, now: Date, quietAc
 }
 
 function isCritical(panel: Panel): boolean {
-  return Boolean(panel.critical) || CRITICAL_KINDS.has(panel.kind);
+  return panel.critical === true;
 }
 
 function selectionReason(panel: Panel): string {

@@ -13,11 +13,11 @@ def main(config):
             children = [
                 render.Box(width = 64, height = 2, color = "#0b5"),
                 render.Padding(
-                    pad = (6, 5, 0, 0),
+                    pad = (7, 2, 0, 0),
                     child = render.Animation(
                         children = [
-                            render.Text(content = time_text, font = "6x13", color = "#fff"),
-                            render.Text(content = blink_time, font = "6x13", color = "#fff"),
+                            render.Text(content = time_text, font = "10x20", color = "#fff"),
+                            render.Text(content = blink_time, font = "10x20", color = "#fff"),
                         ],
                     ),
                 ),
@@ -26,7 +26,7 @@ def main(config):
                     child = render.Text(content = date_text, color = "#28f"),
                 ),
                 render.Padding(
-                    pad = (2, 29, 0, 0),
+                    pad = (2, 30, 0, 0),
                     child = render.Box(width = 60, height = 1, color = "#014"),
                 ),
             ],

@@ -38,6 +38,7 @@ export function App() {
   const [panels, setPanels] = useState<Panel[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
   const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   const refresh = useCallback(async () => {
@@ -69,13 +70,17 @@ export function App() {
     [panels, selectedPanelId, status?.display.currentPanel],
   );
 
-  const act = async (path: string, body: Record<string, unknown>) => {
-    await fetch(apiUrl(path), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    await refresh();
+  const publishedPanel = status?.display.currentPanel;
+  const act = async (path: string, body: Record<string, unknown>, method = "POST") => {
+    setActionError(null);
+    try {
+      const response = await fetch(apiUrl(path), { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!response.ok) {
+        const detail = await response.json() as { message?: string; error?: string };
+        throw new Error(detail.message ?? detail.error ?? "Action failed");
+      }
+      await refresh();
+    } catch (error) { setActionError(error instanceof Error ? error.message : "Action failed"); }
   };
 
   return (
@@ -83,7 +88,7 @@ export function App() {
       <aside className="sidebar">
         <div>
           <div className="brand">Tidbytr</div>
-          <div className="version">v0.1.2</div>
+          <div className="version">v0.5.0</div>
         </div>
 
         <nav aria-label="Main navigation">
@@ -114,7 +119,7 @@ export function App() {
           </div>
           <div className="topbar-metrics">
             <span>Display</span>
-            <b className={status?.display.online ? "chip online" : "chip offline"}>{status?.display.online ? "Online" : "Offline"}</b>
+            <b className={status?.display.online ? "chip online" : "chip offline"}>{status?.display.online ? "Polling" : "No recent pull"}</b>
             <span>Last publish</span>
             <b>{formatLastPublish(status)}</b>
             <span>Last pull</span>
@@ -129,17 +134,23 @@ export function App() {
             <section className="current-panel">
               <div className="section-heading">
                 <div>
-                  <h1>Current panel</h1>
-                  <p>{currentPanel ? `Source: ${sourceLabel(currentPanel.source)}` : "Source: none"}</p>
+                  <h1>Published screen</h1>
+                  <p>{publishedPanel?.title ?? "No published screen"} · {status?.display.fresh ? "Fresh" : "Stale / waiting"}</p>
+                  <p>Next: {status?.scheduler.nextPanel?.title ?? "None"} · {status?.scheduler.nextReason}</p>
+                  {status?.display.degradedReason ? <p role="alert">Display fallback: {status.display.degradedReason}</p> : null}
+                  <p>{publishedPanel ? `Source: ${sourceLabel(publishedPanel.source)}` : "Source: none"}</p>
                 </div>
                 <div className="panel-meta">
-                  <span>Priority: {currentPanel?.priority ?? "--"}</span>
-                  <span>Slot: {panelKindLabel(currentPanel?.kind)}</span>
-                  <span>TTL: {currentPanel ? `${currentPanel.ttlSeconds}s` : "--"}</span>
+                  <span>Priority: {publishedPanel?.priority ?? "--"}</span>
+                  <span>Slot: {panelKindLabel(publishedPanel?.kind)}</span>
+                  <span>TTL: {publishedPanel ? `${publishedPanel.ttlSeconds}s` : "--"}</span>
                 </div>
               </div>
 
-              <div className="preview-label">Preview (64x32)</div>
+              {status?.display.currentFrame ? <div className="preview-frame">
+                <img className="preview-image" alt="Last published screen" src={apiUrl(`display/current.webp?v=${refreshKey}`)} />
+              </div> : null}
+              <div className="preview-label">Selected preview: {currentPanel?.title ?? "None"} (64x32)</div>
               <div className="preview-frame">
                 {currentPanel ? (
                   <img
@@ -193,9 +204,11 @@ export function App() {
 
             <section className="rail-section">
               <h2>Actions</h2>
+              {actionError ? <p className="config-warning" role="alert">{actionError}</p> : null}
+              {status?.scheduler.manualHold ? <p>Manual hold until {formatTime(status.scheduler.manualHold.until)}; critical alerts may interrupt.</p> : null}
               <button className="primary-action" onClick={() => void act("actions/push", { panelId: currentPanel?.id })}>
                 <Play size={16} />
-                Show now
+                Show for 1 minute
               </button>
               <div className="action-pair">
                 <button className="outline-action skip" onClick={() => void act("actions/skip", { panelId: currentPanel?.id })}>
@@ -216,6 +229,36 @@ export function App() {
               </div>
             </section>
 
+            {status ? <section className="rail-section">
+              <h2>Screen priorities</h2>
+              <p>Higher priorities appear first. Cooldowns limit repeats; critical alerts may interrupt.</p>
+              <form key={JSON.stringify(status.config.screenPolicy)} onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                const policy = status.config.screenPolicy;
+                void act("config", { screenPolicy: {
+                  minimumDwellSeconds: Number(data.get("dwell")),
+                  priorities: Object.fromEntries(Object.keys(policy.priorities).map((kind) => [kind, Number(data.get(`priority-${kind}`))])),
+                  cooldownSeconds: Object.fromEntries(Object.keys(policy.cooldownSeconds).map((kind) => [kind, Number(data.get(`cooldown-${kind}`))])),
+                } }, "PUT");
+              }}>
+                <label className="policy-row">Minimum screen time (seconds)
+                  <input name="dwell" aria-label="Minimum screen time" type="number" min="20" max="120" required defaultValue={status.config.screenPolicy.minimumDwellSeconds} />
+                </label>
+                {Object.keys(status.config.screenPolicy.priorities).filter((kind) => kind !== "clock").map((value) => {
+                  const kind = value as Panel["kind"];
+                  return <div className="policy-row" key={kind}>
+                    <span>{panelKindLabel(kind)}</span>
+                    <label>Priority <input aria-label={`${kind} priority`} name={`priority-${kind}`} type="number" min="0" max="100" required defaultValue={status.config.screenPolicy.priorities[kind]} /></label>
+                    <label>Repeat after (s) <input aria-label={`${kind} repeat cooldown`} name={`cooldown-${kind}`} type="number" min="20" max="3600" required defaultValue={status.config.screenPolicy.cooldownSeconds[kind]} /></label>
+                  </div>;
+                })}
+                <input type="hidden" name="priority-clock" value={status.config.screenPolicy.priorities.clock} />
+                <input type="hidden" name="cooldown-clock" value="0" />
+                <button className="outline-action" type="submit">Save screen rules</button>
+              </form>
+            </section> : null}
+
             <section className="rail-section">
               <h2>HDK pull URL</h2>
               <div className="url-box">{status?.display.remoteUrl ?? "Set display_base_url"}</div>
@@ -232,6 +275,7 @@ export function App() {
                   const disabled = status?.scheduler.disabledSources.includes(sourceId) ?? false;
                   return (
                     <button
+                      disabled={sourceId === "clock"}
                       className="toggle-row"
                       key={sourceId}
                       onClick={() => void act("actions/source", { sourceId, enabled: disabled })}

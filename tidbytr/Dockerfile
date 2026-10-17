@@ -3,10 +3,9 @@ FROM node:24-bookworm-slim AS build
 WORKDIR /app
 
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-ARG TIDBYTR_SOURCE_REF=refs/heads/main
-
-ADD https://codeload.github.com/dteske25/tidbytr/tar.gz/${TIDBYTR_SOURCE_REF} /tmp/tidbytr.tar.gz
-RUN tar -xzf /tmp/tidbytr.tar.gz --strip-components=1 -C /app
+# Build the reviewed checkout, without downloading mutable main.
+COPY source.tar.gz /tmp/tidbytr.tar.gz
+RUN tar -xzf /tmp/tidbytr.tar.gz -C /app
 
 RUN corepack enable && pnpm install --frozen-lockfile
 

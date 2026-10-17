@@ -7,6 +7,7 @@ import type {
   SchedulerDecision,
   SchedulerState,
   SourceHealth,
+  PublishedFrame,
 } from "../core/types.js";
 import { defaultSchedulerState } from "../core/scheduler.js";
 
@@ -55,12 +56,21 @@ export class TidbytrStore {
   }
 
   getSchedulerState(quietHours: SchedulerState["quietHours"]): SchedulerState {
-    return this.getJson<SchedulerState>("scheduler_state") ?? defaultSchedulerState(quietHours);
+    const saved = this.getJson<SchedulerState>("scheduler_state");
+    return { ...defaultSchedulerState(quietHours), ...saved, quietHours,
+      skippedPanelIds: saved?.history ? saved.skippedPanelIds : [],
+      disabledSources: (saved?.disabledSources ?? []).filter((source) => source !== "clock"),
+    };
   }
 
   setSchedulerState(state: SchedulerState): void {
     this.setJson("scheduler_state", state);
   }
+
+  getPublishedFrame(): PublishedFrame | null { return this.getJson<PublishedFrame>("published_frame"); }
+  setPublishedFrame(frame: PublishedFrame): void { this.setJson("published_frame", frame); }
+  getSnapshot<T>(source: string): T | null { return this.getJson<T>(`snapshot_${source}`); }
+  setSnapshot<T>(source: string, snapshot: T): void { this.setJson(`snapshot_${source}`, snapshot); }
 
   getLastPublish(): PublishResult | null {
     return this.getJson<PublishResult>("last_publish") ?? this.getJson<PublishResult>("last_push");
