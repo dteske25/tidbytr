@@ -44,7 +44,7 @@ API acceptance confirms a server response, not physical display. Outbound HTTPS 
 ## Upgrade from 0.5 / HDK
 
 1. Back up the existing add-on and note its settings. If you flashed HDK, restore production firmware using [HDK's Back to Normal instructions](https://github.com/tidbyt/hdk#back-to-normal) for Gen 2. If already on stock firmware, no firmware change is needed. This server does not flash the device.
-2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.8.2**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
+2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.8.3**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
 3. Enter `tidbyt_api_token` and `tidbyt_device_id`, keeping your location, timezone, teams, and quiet hours.
 4. Remove the obsolete `display_base_url` option and any retained port 8788 mapping. Save and restart. The old `/current.webp` firmware feed is no longer served.
 5. Open the dashboard, check API acceptance, then try Show now and observe the actual device and animated weather app.
@@ -98,7 +98,7 @@ Open **Personal screens** in the dashboard to set a birth date and optional name
 
 The equivalent HA options are `baby_birth_date` (`YYYY-MM-DD`, empty disables), `baby_name` (optional), and `starfield_enabled` (default true). As with other ordinary settings, dashboard saves take ownership after a save; make later edits there. Personal data is entered in HA or the dashboard; repository samples use synthetic dates.
 
-Star flight is a smooth four-second animated loop of stars moving outward from a distant center, with subtle perspective streaks. Baby age and Star flight share the Personal & ambient source toggle. Both respect quiet hours and snooze; critical alerts retain precedence. In priority mode, their priorities/cooldowns are editable in Screen priorities (defaults: baby 25 / 600 seconds, stars 10 / 300 seconds). In clock-led mode, Rotation controls their slot durations.
+Star flight is a smooth four-second loop at 20 frames per second, with 64 stars accelerating outward and longer speed-linked streaks. Most stars cross the scene three times per loop. Motion design references [gabe565’s Starfield in the official Tidbyt community repo](https://github.com/tidbyt/community/blob/main/apps/starfield/starfield.star); the renderer uses its own deterministic seamless trajectories. Baby age and Star flight share the Personal & ambient source toggle. Both respect quiet hours and snooze; critical alerts retain precedence. In priority mode, their priorities/cooldowns are editable in Screen priorities (defaults: baby 25 / 600 seconds, stars 10 / 300 seconds). In clock-led mode, Rotation controls their slot durations.
 
 `pnpm render:local` creates clock, synthetic baby-age, and animated starfield previews for both renderer paths.
 

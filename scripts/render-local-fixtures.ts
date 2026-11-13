@@ -31,6 +31,6 @@ for (const [backend, renderer] of [["pixlet", new PixletRenderer()], ["sharp", n
   await sharp({ create: { width: 816, height: 432, channels: 4, background: "#10151e" } }).composite(tiles).png().toFile(path.join(directory, `${backend}-review.png`));
 }
 const stars = await new SharpRenderer().render(cases[3]!.panel, now, config);
-const strip = await Promise.all([0, 6, 12, 18, 24, 30, 36, 42].map(async (page, index) => ({ input: await sharp(stars.webp, { page, pages: 1 }).resize(256, 128, { kernel: "nearest" }).png().toBuffer(), left: index % 4 * 256, top: Math.floor(index / 4) * 128 })));
+const strip = await Promise.all([0, 13, 26, 39, 52, 65, 79, 0].map(async (page, index) => ({ input: await sharp(stars.webp, { page, pages: 1 }).resize(256, 128, { kernel: "nearest" }).png().toBuffer(), left: index % 4 * 256, top: Math.floor(index / 4) * 128 })));
 await sharp({ create: { width: 1024, height: 256, channels: 4, background: "#000" } }).composite(strip).png().toFile(path.join(directory, "starfield-motion.png"));
 console.log(`Rendered 12-hour clocks, a synthetic baby-age example, and animated star flight in ${directory}`);

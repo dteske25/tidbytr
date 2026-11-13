@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.3
+
+- Speed up star flight with 20 fps motion, 64 stars, and longer speed-linked trails. Preserve the seamless four-second loop and existing screen timings.
+
 ## 0.8.2
 
 - Simplify the 12-hour clock to white time and a centered white date, separated by a one-pixel red line. Remove the top green bar, bottom blue rule, and AM/PM label in both rendering backends.

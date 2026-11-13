@@ -5,7 +5,7 @@ import { normalizeOptions } from "../src/core/config.js";
 import { buildPanels } from "../src/core/panels.js";
 import { choosePanel, defaultSchedulerState, recordShown } from "../src/core/scheduler.js";
 import { clockDisplay, babyAgeDisplay } from "../src/renderer/local-screens.js";
-import { starfieldFrames } from "../src/renderer/starfield.js";
+import { starfieldFrames, STARFIELD_FRAMES, STARFIELD_DELAY_MS } from "../src/renderer/starfield.js";
 import { PixletRenderer } from "../src/renderer/pixlet.js";
 import { SharpRenderer } from "../src/renderer/renderer.js";
 import { validateDisplayFrame } from "../src/core/publisher.js";
@@ -125,11 +125,27 @@ describe("native local artwork", () => {
       }
     }
   });
-  it("renders a deterministic, bounded four-second star flight through both renderer paths", async () => {
+  it("renders a deterministic, bounded four-second star flight at 20 frames per second through both renderer paths", async () => {
     const source = starfieldFrames();
-    expect(source).toHaveLength(50);
+    expect(source).toHaveLength(STARFIELD_FRAMES);
     expect(source[0]!.raw()).toEqual(starfieldFrames()[0]!.raw());
     expect(source[0]!.raw()).not.toEqual(source[25]!.raw());
+    const pixels = source.map((frame) => frame.raw());
+    // Keep the denser streaks visible without turning a frame into a full-screen flash.
+    for (const frame of pixels) {
+      let lit = 0;
+      for (let offset = 0; offset < frame.length; offset += 4) if (frame[offset + 2]! > 30) lit++;
+      expect(lit).toBeGreaterThan(60);
+      expect(lit).toBeLessThan(512);
+    }
+    const differences = pixels.map((frame, index) => {
+      const next = pixels[(index + 1) % pixels.length]!;
+      let difference = 0;
+      for (let offset = 0; offset < frame.length; offset += 4) difference += Math.abs(frame[offset + 2]! - next[offset + 2]!);
+      return difference;
+    });
+    // Wrapping to frame zero should move naturally, with no whole-scene reset.
+    expect(differences.at(-1)!).toBeLessThanOrEqual(Math.max(...differences.slice(0, -1)) * 1.25);
     const images = [];
     for (const renderer of [new PixletRenderer(), new SharpRenderer()]) {
       const frame = await renderer.render(panels()[2]!, now, options());
@@ -139,6 +155,8 @@ describe("native local artwork", () => {
       expect(metadata.pageHeight).toBe(32);
       expect(metadata.pages).toBeGreaterThan(20);
       expect(metadata.loop).toBe(0);
+      expect(STARFIELD_DELAY_MS).toBe(50);
+      expect(metadata.delay?.every((delay) => delay === 50)).toBe(true);
       expect(metadata.delay?.reduce((sum, delay) => sum + delay, 0)).toBe(4000);
       expect(frame.webp.length).toBeLessThan(512 * 1024);
       images.push(frame.webp);
