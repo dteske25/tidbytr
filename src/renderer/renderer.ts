@@ -24,8 +24,8 @@ export async function renderPanel(panel: Panel, now = new Date()): Promise<Frame
       renderClock(canvas, now, (panel.payload as { timezone?: string } | null)?.timezone);
       break;
     case "baby-age": {
-      const baby = panel.payload as { birthDate: string; name: string; timezone: string };
-      renderBabyAge(canvas, babyAgeDisplay(baby.birthDate, baby.name, now, baby.timezone));
+      const baby = panel.payload as { birthDate: string; name: string; timezone: string; style?: "boy" | "girl" | "neutral" };
+      renderBabyAge(canvas, babyAgeDisplay(baby.birthDate, baby.name, now, baby.timezone, baby.style));
       break;
     }
     case "starfield":
@@ -83,12 +83,12 @@ function renderClock(canvas: PixelCanvas, now: Date, timezone = "UTC"): void {
 }
 
 function renderBabyAge(canvas: PixelCanvas, display: ReturnType<typeof babyAgeDisplay>): void {
-  const pink = hexColor("#E88AAA");
-  canvas.drawText(display.name, 3, 2, pink);
+  const accent = hexColor(display.accent);
+  canvas.drawText(display.name, 3, 2, accent);
   const heart = [".xx..xx.", "xxxxxxxx", "xxxxxxxx", ".xxxxxx.", "..xxxx..", "...xx..."];
-  for (const [y, row] of heart.entries()) for (const [x, pixel] of [...row].entries()) if (pixel === "x") canvas.setPixel(53 + x, 1 + y, pink);
+  for (const [y, row] of heart.entries()) for (const [x, pixel] of [...row].entries()) if (pixel === "x") canvas.setPixel(53 + x, 1 + y, accent);
   canvas.drawText(display.primary, Math.floor((64 - canvas.measureText(display.primary, 2)) / 2), 11, COLORS.ink, 2);
-  canvas.drawText(display.secondary, 3, 25, hexColor("#A5B8D0"));
+  canvas.drawText(display.secondary, 3, 25, hexColor(display.secondaryColor));
 }
 
 function renderAlert(canvas: PixelCanvas, alert: WeatherAlert): void {

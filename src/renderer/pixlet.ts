@@ -115,8 +115,8 @@ function buildDisplayPayload(panel: Panel, now: Date, config: RuntimeConfig): Re
     case "clock":
       return clockDisplay(now, config.timezone);
     case "baby-age": {
-      const baby = panel.payload as { birthDate: string; name: string; timezone: string };
-      return babyAgeDisplay(baby.birthDate, baby.name, now, baby.timezone);
+      const baby = panel.payload as { birthDate: string; name: string; timezone: string; style?: "boy" | "girl" | "neutral" };
+      return babyAgeDisplay(baby.birthDate, baby.name, now, baby.timezone, baby.style);
     }
     case "forecast": {
       return weatherDisplay(panel.payload as ForecastDisplayInput);

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -24,10 +25,18 @@ const screenPolicySchema = z.object({
   cooldownSeconds: cooldownSchema.default(DEFAULT_SCREEN_POLICY.cooldownSeconds),
 }).refine((policy) => policy.mode !== "clock-cycle" || policy.clockSeconds > policy.screenSeconds, { message: "Clock duration must be longer than other screens", path: ["clockSeconds"] }).default(DEFAULT_SCREEN_POLICY);
 
+const childSchema = z.object({
+  id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "Child ID must use letters, numbers, hyphens, or underscores").optional(),
+  name: z.string().trim().min(1, "Child name is required").max(40),
+  birthDate: z.string().trim().refine(validBirthDate, "Expected a real birth date in YYYY-MM-DD format (1900 or later)"),
+  style: z.enum(["boy", "girl", "neutral"]).default("neutral"),
+}).transform((child) => ({ ...child, id: child.id ?? createHash("sha256").update(`${child.name}\0${child.birthDate}`).digest("hex").slice(0, 16) }));
+
 export const homeAssistantOptionsSchema = z.object({
   tidbytApiToken: z.string().trim().default(""),
   tidbytDeviceId: z.string().trim().default(""),
   installationId: z.string().trim().regex(/^[A-Za-z0-9]+$/, "Tidbyt installation ID must be alphanumeric").default(DEFAULT_INSTALLATION_ID),
+  children: z.array(childSchema).max(20).refine((children) => new Set(children.map((child) => child.id)).size === children.length, "Each child must have a unique ID").optional(),
   babyBirthDate: z.string().trim().refine((value) => value === "" || validBirthDate(value), "Expected a real birth date in YYYY-MM-DD format (1900 or later)").default(""),
   babyName: z.string().trim().max(40).default(""),
   starfieldEnabled: z.boolean().default(true),
@@ -103,6 +112,7 @@ export function loadRuntimeConfig(): RuntimeConfig {
     tidbytApiToken: process.env.TIDBYTR_API_TOKEN,
     tidbytDeviceId: process.env.TIDBYTR_DEVICE_ID,
     installationId: process.env.TIDBYTR_INSTALLATION_ID,
+    children: process.env.TIDBYTR_CHILDREN ? JSON.parse(process.env.TIDBYTR_CHILDREN) : undefined,
     babyBirthDate: process.env.TIDBYTR_BABY_BIRTH_DATE,
     babyName: process.env.TIDBYTR_BABY_NAME,
     starfieldEnabled: process.env.TIDBYTR_STARFIELD_ENABLED === undefined ? undefined : z.enum(["true", "false"]).parse(process.env.TIDBYTR_STARFIELD_ENABLED) === "true",

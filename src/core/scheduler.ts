@@ -86,7 +86,13 @@ function chooseClockCycle(request: SchedulerRequest, eligible: Panel[], skipped:
   const cursor = Number.isInteger(state.cycleNextIndex) ? ((state.cycleNextIndex % CLOCK_CYCLE_KINDS.length) + CLOCK_CYCLE_KINDS.length) % CLOCK_CYCLE_KINDS.length : 0;
   for (let offset = 0; offset < CLOCK_CYCLE_KINDS.length; offset++) {
     const kind = CLOCK_CYCLE_KINDS[(cursor + offset) % CLOCK_CYCLE_KINDS.length];
-    const panel = eligible.find((candidate) => candidate.kind === kind);
+    // One child per age slot; least recently shown gives each child a turn without
+    // adding consecutive age screens or changing the weather/stars cadence.
+    const panel = eligible.filter((candidate) => candidate.kind === kind).toSorted((a, b) => {
+      const aLast = state.history[a.id]?.lastShownAt;
+      const bLast = state.history[b.id]?.lastShownAt;
+      return (aLast ? Date.parse(aLast) : -Infinity) - (bLast ? Date.parse(bLast) : -Infinity);
+    })[0];
     if (panel) return selected(panel, `Clock-led cycle: ${panel.title}`);
   }
   return decision(now, clock ?? null, clock ? "Clock while cycle screens are unavailable" : "No eligible panels", clock ? "selected" : "not-shown", skipped);

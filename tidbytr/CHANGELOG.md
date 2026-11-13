@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0
+
+- Configure multiple children in Personal screens or HA, with a name, birth date, and boy (blue), girl (pink), or neutral (green) style for each.
+- Rotate children across age slots while preserving clock gaps, weather/stars cadence, and per-child history.
+- Preserve legacy single-child configuration; removing all children disables age screens.
+
 ## 0.8.3
 
 - Speed up star flight with 20 fps motion, 64 stars, and longer speed-linked trails. Preserve the seamless four-second loop and existing screen timings.

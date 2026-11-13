@@ -52,6 +52,7 @@ export class TidbytrStore {
     // Existing HDK saves inherit new fields; baseline credentials allow HA key rotation.
     const saved = this.getJson<Partial<HomeAssistantOptions>>("options");
     return { ...fallback, ...saved,
+      ...(saved?.babyBirthDate && saved.children === undefined ? { children: undefined } : {}),
       tidbytApiToken: fallback.tidbytApiToken || saved?.tidbytApiToken || "",
       tidbytDeviceId: fallback.tidbytDeviceId || saved?.tidbytDeviceId || "",
     };
