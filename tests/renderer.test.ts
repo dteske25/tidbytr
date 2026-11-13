@@ -173,10 +173,11 @@ describe.runIf(hasPixlet())("pixlet integration", () => {
     const frame = await renderer.render(clockPanel("2026-06-28T12:00:00.000Z", "America/Chicago"), new Date("2026-06-28T12:00:00.000Z"), testConfig());
     const image = await firstFramePixels(frame.webp);
 
-    expect(litPixels(image, { x: 0, y: 0, width: 64, height: 3 })).toBeGreaterThan(40);
+    expect(litPixels(image, { x: 0, y: 0, width: 64, height: 3 })).toBe(0);
     expect(litPixels(image, { x: 5, y: 4, width: 54, height: 15 })).toBeGreaterThan(80);
-    expect(litPixels(image, { x: 12, y: 21, width: 40, height: 8 })).toBeGreaterThan(20);
-    expect(litPixels(image, { x: 0, y: 30, width: 64, height: 2 })).toBeGreaterThan(40);
+    expect(litPixels(image, { x: 2, y: 21, width: 60, height: 1 })).toBe(60);
+    expect(litPixels(image, { x: 12, y: 24, width: 40, height: 7 })).toBeGreaterThan(20);
+    expect(litPixels(image, { x: 0, y: 31, width: 64, height: 1 })).toBe(0);
   });
 
   it("keeps weather readable for long text, zero, negative, three-digit, and missing values", async () => {

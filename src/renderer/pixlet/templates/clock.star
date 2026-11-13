@@ -11,9 +11,8 @@ def main(config):
         delay = 500,
         child = render.Stack(
             children = [
-                render.Box(width = 64, height = 2, color = "#0b5"),
                 render.Padding(
-                    pad = (display.get("timeX") or 7, 2, 0, 0),
+                    pad = (display.get("timeX") or 7, 0, 0, 0),
                     child = render.Animation(
                         children = [
                             render.Text(content = time_text, font = "10x20", color = "#fff"),
@@ -22,16 +21,12 @@ def main(config):
                     ),
                 ),
                 render.Padding(
-                    pad = (7, 22, 0, 0),
-                    child = render.Text(content = date_text, color = "#28f"),
+                    pad = ((64 - len(date_text) * 5) // 2, 24, 0, 0),
+                    child = render.Text(content = date_text, font = "5x8", color = "#fff"),
                 ),
                 render.Padding(
-                    pad = (51, 23, 0, 0),
-                    child = render.Text(content = display.get("period") or "", font = "tom-thumb", color = "#9AB"),
-                ),
-                render.Padding(
-                    pad = (2, 30, 0, 0),
-                    child = render.Box(width = 60, height = 1, color = "#014"),
+                    pad = (2, 21, 0, 0),
+                    child = render.Box(width = 60, height = 1, color = "#EF4444"),
                 ),
             ],
         ),

@@ -95,6 +95,36 @@ describe("local panel integration", () => {
 });
 
 describe("native local artwork", () => {
+  it("keeps the clock monochrome above a thin red divider and centers the stationary date below it", async () => {
+    for (const renderer of [new PixletRenderer(), new SharpRenderer()]) {
+      for (const timestamp of ["2026-06-28T15:07:00Z", "2026-09-30T00:00:00Z", "2026-12-01T23:59:00Z"]) {
+        const time = new Date(timestamp);
+        const frame = await renderer.render(panels(time)[0]!, time, options());
+        await validateDisplayFrame(frame);
+        const metadata = await sharp(frame.webp, { animated: true }).metadata();
+        let previousDate: Buffer | undefined;
+        for (let page = 0; page < (metadata.pages ?? 1); page++) {
+          const { data } = await sharp(frame.webp, { page, pages: 1 }).removeAlpha().raw().toBuffer({ resolveWithObject: true });
+          const dateXs: number[] = [];
+          for (let y = 0; y < 32; y++) for (let x = 0; x < 64; x++) {
+            const [r, g, b] = data.subarray((y * 64 + x) * 3, (y * 64 + x) * 3 + 3);
+            if (y === 21 && x >= 2 && x < 62) {
+              expect([r, g, b]).toEqual([239, 68, 68]);
+            } else {
+              expect(r).toBe(g); expect(g).toBe(b);
+              if (y < 3 || y === 20 || y === 22 || y === 23 || y === 31) expect(r).toBe(0);
+              if (y >= 24 && r! > 0) dateXs.push(x);
+            }
+          }
+          expect(dateXs.length).toBeGreaterThan(0);
+          expect(Math.abs(Math.min(...dateXs) + Math.max(...dateXs) - 63)).toBeLessThanOrEqual(1);
+          const date = data.subarray(24 * 64 * 3);
+          if (previousDate) expect(date).toEqual(previousDate);
+          previousDate = date;
+        }
+      }
+    }
+  });
   it("renders a deterministic, bounded four-second star flight through both renderer paths", async () => {
     const source = starfieldFrames();
     expect(source).toHaveLength(50);

@@ -77,11 +77,9 @@ export async function renderPanel(panel: Panel, now = new Date()): Promise<Frame
 
 function renderClock(canvas: PixelCanvas, now: Date, timezone = "UTC"): void {
   const display = clockDisplay(now, timezone);
-  canvas.drawText(display.time, Math.floor((64 - canvas.measureText(display.time, 3)) / 2), 5, COLORS.white, 3);
-  canvas.drawText(display.date, 7, 24, COLORS.blue);
-  canvas.drawText(display.period, 51, 24, COLORS.muted);
-  canvas.fillRect(2, 2, 60, 2, COLORS.green);
-  canvas.fillRect(2, 30, 60, 1, COLORS.navy);
+  canvas.drawText(display.time, Math.floor((64 - canvas.measureText(display.time, 3)) / 2), 3, COLORS.white, 3);
+  canvas.fillRect(2, 21, 60, 1, COLORS.red);
+  canvas.drawText(display.date, Math.floor((64 - canvas.measureText(display.date)) / 2), 25, COLORS.white);
 }
 
 function renderBabyAge(canvas: PixelCanvas, display: ReturnType<typeof babyAgeDisplay>): void {
