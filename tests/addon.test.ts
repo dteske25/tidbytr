@@ -23,10 +23,14 @@ describe("Home Assistant add-on package", () => {
     expect(config.ingress_port).toBe(8787);
     expect(config.ports).not.toHaveProperty("8788/tcp");
     expect(config).toHaveProperty("version", packageJson.version);
-    for (const key of ["tidbyt_api_token", "tidbyt_device_id", "installation_id", "timezone", "latitude", "longitude", "nws_contact", "baby_birth_date", "baby_name", "starfield_enabled", "schedule_mode", "clock_seconds", "screen_seconds"]) {
+    for (const key of ["tidbyt_api_token", "tidbyt_device_id", "installation_id", "timezone", "latitude", "longitude", "nws_contact", "children", "starfield_enabled", "schedule_mode", "clock_seconds", "screen_seconds"]) {
       expect(config.options).toHaveProperty(key);
       expect(config.schema).toHaveProperty(key);
     }
+    expect(config.options.children).toEqual([]);
+    expect(config.schema.children).toEqual([{ name: "str", birth_date: "str", style: "list(boy|girl|neutral)", id: "str?" }]);
+    expect(config.schema.baby_birth_date).toBe("str?");
+    expect(config.schema.baby_name).toBe("str?");
     expect(config.schema.tidbyt_api_token).toBe("password");
   });
 

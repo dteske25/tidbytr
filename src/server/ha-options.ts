@@ -15,6 +15,9 @@ const options = normalizeOptions({
   longitude: raw.longitude,
   nwsContact: raw.nws_contact,
   favoriteTeams: raw.favorite_teams,
+  // An empty list added by HA on upgrade must not hide a legacy child.
+  children: Array.isArray(raw.children) && (raw.children.length > 0 || !raw.baby_birth_date)
+    ? raw.children.map((entry) => { const child = entry as Record<string, unknown>; return { id: child.id, name: child.name, birthDate: child.birth_date, style: child.style }; }) : undefined,
   babyBirthDate: raw.baby_birth_date,
   babyName: raw.baby_name,
   starfieldEnabled: raw.starfield_enabled,

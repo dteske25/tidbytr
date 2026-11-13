@@ -22,8 +22,7 @@ You need a Gen 2 configured in the Tidbyt mobile app, its device ID/API key, Int
    nws_contact: "Tidbytr (you@example.com)"
    favorite_teams:
      - KC
-   baby_birth_date: ""
-   baby_name: ""
+   children: []
    starfield_enabled: true
    schedule_mode: clock-cycle
    clock_seconds: 30
@@ -44,7 +43,7 @@ API acceptance confirms a server response, not physical display. Outbound HTTPS 
 ## Upgrade from 0.5 / HDK
 
 1. Back up the existing add-on and note its settings. If you flashed HDK, restore production firmware using [HDK's Back to Normal instructions](https://github.com/tidbyt/hdk#back-to-normal) for Gen 2. If already on stock firmware, no firmware change is needed. This server does not flash the device.
-2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.8.3**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
+2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.9.0**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
 3. Enter `tidbyt_api_token` and `tidbyt_device_id`, keeping your location, timezone, teams, and quiet hours.
 4. Remove the obsolete `display_base_url` option and any retained port 8788 mapping. Save and restart. The old `/current.webp` firmware feed is no longer served.
 5. Open the dashboard, check API acceptance, then try Show now and observe the actual device and animated weather app.
@@ -92,11 +91,23 @@ The HA baseline options are `schedule_mode` (`clock-cycle` or `priority`), `cloc
 
 The 12-hour clock uses white time above a thin red divider and a centered white date below it.
 
-The clock uses **12-hour time with AM/PM**, without a leading zero, in your configured timezone.
+In **Personal screens**, use **Add child** for each child, enter their name and birth date, then choose **Boy · Blue**, **Girl · Pink**, or **Neutral · Green** and save. Remove all children to hide age screens. Names are abbreviated only on the display; full names remain in settings. Future birth dates are hidden until that local date. Up to 20 children are supported.
 
-Open **Personal screens** in the dashboard to set a birth date and optional name, and to enable/disable Star flight. Save personal screens to apply changes immediately. The baby screen stays hidden until a valid, non-future birth date is configured. It shows calendar months/days (then years/months) plus weeks or remaining days. Month-end and leap-day anniversaries clamp to the final day of that month. It is based on your timezone's calendar date, including across daylight-saving changes.
+In clock-led mode, one child appears in each age slot, alternating across rounds: weather → first child → stars, then weather → second child → stars, with a 30-second clock between each 15-second screen. Age uses calendar months/days in the configured timezone, including month-end and leap-year anniversaries.
 
-The equivalent HA options are `baby_birth_date` (`YYYY-MM-DD`, empty disables), `baby_name` (optional), and `starfield_enabled` (default true). As with other ordinary settings, dashboard saves take ownership after a save; make later edits there. Personal data is entered in HA or the dashboard; repository samples use synthetic dates.
+HA baseline configuration supports a `children` list (synthetic example):
+
+```yaml
+children:
+  - name: Sample One
+    birth_date: "2026-03-18"
+    style: boy
+  - name: Sample Two
+    birth_date: "2024-02-29"
+    style: girl
+```
+
+HA child IDs are optional; the dashboard assigns and preserves IDs automatically. Existing `baby_birth_date`/`baby_name` settings remain supported until saved as a list in the dashboard. Dashboard saves take ownership of ordinary settings; make later edits there. To clear legacy settings using HA, clear the old birth-date field as well as the list. Personal data belongs in HA/dashboard settings; repository fixtures use synthetic dates.
 
 Star flight is a smooth four-second loop at 20 frames per second, with 64 stars accelerating outward and longer speed-linked streaks. Most stars cross the scene three times per loop. Motion design references [gabe565’s Starfield in the official Tidbyt community repo](https://github.com/tidbyt/community/blob/main/apps/starfield/starfield.star); the renderer uses its own deterministic seamless trajectories. Baby age and Star flight share the Personal & ambient source toggle. Both respect quiet hours and snooze; critical alerts retain precedence. In priority mode, their priorities/cooldowns are editable in Screen priorities (defaults: baby 25 / 600 seconds, stars 10 / 300 seconds). In clock-led mode, Rotation controls their slot durations.
 

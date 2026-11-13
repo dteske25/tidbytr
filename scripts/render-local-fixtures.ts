@@ -16,6 +16,7 @@ const cases = [
   { name: "clock-pm", panel: clockPanel(now.toISOString(), "UTC"), time: now },
   { name: "clock-midnight", panel: clockPanel(now.toISOString(), "UTC"), time: new Date("2026-06-28T00:00:00Z") },
   { name: "baby-age", panel: panels.find((panel) => panel.kind === "baby-age")!, time: now },
+  ...(["boy", "girl"] as const).map((style) => ({ name: `baby-age-${style}`, panel: { ...panels.find((panel) => panel.kind === "baby-age")!, payload: { birthDate: "2026-03-18", name: style === "boy" ? "ALEXANDER" : "CHARLOTTE", timezone: "UTC", style } }, time: now })),
   { name: "starfield", panel: panels.find((panel) => panel.kind === "starfield")!, time: now },
 ];
 await mkdir(directory, { recursive: true });
@@ -28,9 +29,9 @@ for (const [backend, renderer] of [["pixlet", new PixletRenderer()], ["sharp", n
     await sharp(frame.webp, { animated: true }).resize(384, 192, { kernel: "nearest" }).gif({ loop: 0 }).toFile(path.join(directory, `${backend}-${fixture.name}.gif`));
     tiles.push({ input: await sharp(frame.webp).resize(384, 192, { kernel: "nearest" }).png().toBuffer(), left: 16 + index % 2 * 400, top: 16 + Math.floor(index / 2) * 208 });
   }
-  await sharp({ create: { width: 816, height: 432, channels: 4, background: "#10151e" } }).composite(tiles).png().toFile(path.join(directory, `${backend}-review.png`));
+  await sharp({ create: { width: 816, height: 16 + Math.ceil(cases.length / 2) * 208, channels: 4, background: "#10151e" } }).composite(tiles).png().toFile(path.join(directory, `${backend}-review.png`));
 }
-const stars = await new SharpRenderer().render(cases[3]!.panel, now, config);
+const stars = await new SharpRenderer().render(cases.find((fixture) => fixture.name === "starfield")!.panel, now, config);
 const strip = await Promise.all([0, 13, 26, 39, 52, 65, 79, 0].map(async (page, index) => ({ input: await sharp(stars.webp, { page, pages: 1 }).resize(256, 128, { kernel: "nearest" }).png().toBuffer(), left: index % 4 * 256, top: Math.floor(index / 4) * 128 })));
 await sharp({ create: { width: 1024, height: 256, channels: 4, background: "#000" } }).composite(strip).png().toFile(path.join(directory, "starfield-motion.png"));
 console.log(`Rendered 12-hour clocks, a synthetic baby-age example, and animated star flight in ${directory}`);

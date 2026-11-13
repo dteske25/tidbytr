@@ -72,6 +72,13 @@ export interface PublishResult {
   installationId?: string;
 }
 
+export interface ChildProfile {
+  id: string;
+  name: string;
+  birthDate: string;
+  style: "boy" | "girl" | "neutral";
+}
+
 export interface HomeAssistantOptions {
   tidbytApiToken: string;
   tidbytDeviceId: string;
@@ -81,6 +88,7 @@ export interface HomeAssistantOptions {
   longitude: number;
   nwsContact: string;
   favoriteTeams: string[];
+  children?: ChildProfile[];
   babyBirthDate: string;
   babyName: string;
   starfieldEnabled: boolean;

@@ -99,6 +99,7 @@ export class TidbytrRuntime {
     const changes = input as Partial<RuntimeConfig>;
     const policyChanges = changes?.screenPolicy;
     const next = normalizeOptions({ ...this.config, ...changes,
+      ...(changes?.children !== undefined ? { babyBirthDate: "", babyName: "" } : {}),
       ...(policyChanges && typeof policyChanges === "object" && !Array.isArray(policyChanges)
         ? { screenPolicy: { ...this.config.screenPolicy, ...policyChanges } } : {}),
     });

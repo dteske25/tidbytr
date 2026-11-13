@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Panel, SourceHealth, SourceId, TidbytrStatus } from "../../core/types.js";
+import { ChildrenForm } from "./ChildrenForm.js";
 import { apiUrl } from "./ingress.js";
 
 type LoadState = "loading" | "ready" | "error";
@@ -90,7 +91,7 @@ export function App() {
       <aside className="sidebar">
         <div>
           <div className="brand">Tidbytr</div>
-          <div className="version">v0.8.3</div>
+          <div className="version">v0.9.0</div>
         </div>
 
         <nav aria-label="Main navigation">
@@ -232,22 +233,12 @@ export function App() {
 
             {status ? <section className="rail-section">
               <h2>Personal screens</h2>
-              <p>Age uses calendar months and days in {status.config.timezone}. Leave the birth date empty to hide it.</p>
-              <form key={`${status.config.babyBirthDate}-${status.config.babyName}-${status.config.starfieldEnabled}`} onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                void act("config", { babyBirthDate: String(data.get("babyBirthDate") ?? ""), babyName: String(data.get("babyName") ?? ""), starfieldEnabled: data.has("starfieldEnabled") }, "PUT");
-              }}>
-                <label className="policy-row">Birth date <input type="date" name="babyBirthDate" aria-label="Baby birth date" defaultValue={status.config.babyBirthDate} /></label>
-                <label className="policy-row">Name (optional) <input name="babyName" aria-label="Baby name" maxLength={40} defaultValue={status.config.babyName} /></label>
-                <label className="policy-row">Star flight <input type="checkbox" name="starfieldEnabled" aria-label="Star flight enabled" defaultChecked={status.config.starfieldEnabled} /></label>
-                <button className="outline-action" type="submit">Save personal screens</button>
-              </form>
+              <ChildrenForm key={JSON.stringify([status.config.children, status.config.babyBirthDate, status.config.babyName, status.config.starfieldEnabled])} config={status.config} onSave={(body) => act("config", body, "PUT")} />
             </section> : null}
 
             {status ? <section className="rail-section">
               <h2>Rotation</h2>
-              <p>Clock → Weather → Clock → Baby age → Clock → Stars. Disabled or unavailable screens are skipped; critical alerts can interrupt.</p>
+              <p>Clock → Weather → Clock → Baby age → Clock → Stars. Each age slot shows the next child. Disabled or unavailable screens are skipped; critical alerts can interrupt.</p>
               <form key={`rotation-${status.config.screenPolicy.mode}-${status.config.screenPolicy.clockSeconds}-${status.config.screenPolicy.screenSeconds}`} onSubmit={(event) => {
                 event.preventDefault();
                 const data = new FormData(event.currentTarget);
@@ -351,7 +342,7 @@ function PanelStrip({
           title={panel.title}
         >
           <Gauge size={14} />
-          {panelKindLabel(panel.kind)}
+          {panel.kind === "baby-age" ? panel.title : panelKindLabel(panel.kind)}
         </button>
       ))}
     </div>

@@ -623,3 +623,10 @@ h2 {
 .policy-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: #0d8f61; }
 
 .policy-row select { max-width: 100%; padding: 4px; border: 1px solid #cbd5e1; border-radius: 4px; background: #f8fafc; color: #0f172a; }
+
+.child-profile { min-width: 0; margin: 12px 0; padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 6px; }
+.child-profile legend { padding: 0 4px; font-weight: 600; }
+.child-profile .child-name { width: 168px; max-width: 100%; }
+.child-profile .outline-action { margin-top: 8px; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; background: white; color: #0f172a; }
+
+.panel-token { max-width: 100%; overflow-wrap: anywhere; }
