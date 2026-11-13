@@ -1,6 +1,6 @@
 {
   "name": "tidbytr",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "private": true,
   "type": "module",
   "description": "Tidbyt stock-firmware API app with a local scheduler and Home Assistant add-on.",
@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "render:local": "tsx scripts/render-local-fixtures.ts",
     "render:weather": "tsx scripts/render-weather-fixtures.ts",
     "render:fixtures": "tsx scripts/render-panel-fixtures.ts",
     "verify": "pnpm typecheck && pnpm test && pnpm build",

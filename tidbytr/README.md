@@ -7,3 +7,5 @@ Install/update this add-on, enter `tidbyt_api_token` and `tidbyt_device_id` from
 For upgrades from HDK, back up the add-on, restore production firmware using [HDK's Back to Normal instructions](https://github.com/tidbyt/hdk#back-to-normal) for Gen 2, then configure API delivery. Remove obsolete `display_base_url` and port 8788 settings. This add-on does not flash firmware.
 
 See the [installation guide](https://github.com/dteske25/tidbytr#readme) and [operations documentation](DOCS.md). API acceptance does not confirm physical display; outages can leave previous images on the device.
+
+Version 0.7 adds a 12-hour clock, configurable baby age, and animated Star flight. Use Personal screens in the dashboard, or initial HA options `baby_birth_date`, `baby_name`, and `starfield_enabled`. Baby age stays hidden until a valid birth date is configured.

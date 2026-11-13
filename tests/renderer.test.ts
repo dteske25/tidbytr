@@ -92,8 +92,9 @@ describe("pixlet renderer", () => {
     expect(payload).toMatchObject({
       timezone: "America/Chicago",
       display: {
-        time: "07:00",
-        blinkTime: "07 00",
+        time: "7:00",
+        blinkTime: "7 00",
+        period: "AM",
         date: "JUN 28",
       },
     });

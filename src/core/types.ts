@@ -1,13 +1,15 @@
 import type { ScreenPolicy } from "./policy.js";
 export type PanelKind =
   | "clock"
+  | "baby-age"
+  | "starfield"
   | "nws-alert"
   | "forecast"
   | "upcoming-game"
   | "live-score"
   | "final-score";
 
-export type SourceId = "clock" | "nws" | "sports";
+export type SourceId = "clock" | "nws" | "sports" | "local";
 
 export type AlertSeverity = "warning" | "watch" | "advisory";
 
@@ -79,6 +81,9 @@ export interface HomeAssistantOptions {
   longitude: number;
   nwsContact: string;
   favoriteTeams: string[];
+  babyBirthDate: string;
+  babyName: string;
+  starfieldEnabled: boolean;
   logLevel: "trace" | "debug" | "info" | "warn" | "error";
   schedulerIntervalSeconds: number;
   refreshIntervalSeconds: number;

@@ -242,6 +242,23 @@ describe("reliable display lifecycle", () => {
     expect(store.getOptions(testConfig({ tidbytApiToken: "rotated-secret" })).tidbytApiToken).toBe("rotated-secret");
   });
 
+  it("applies local-screen settings and clears a hold when its screen is hidden", async () => {
+    const runtime = makeRuntime();
+    await runtime.updateConfig({ starfieldEnabled: true });
+    await runtime.publish("starfield");
+    expect((await runtime.getStatus()).scheduler.manualHold?.panelId).toBe("starfield");
+    await runtime.updateConfig({ starfieldEnabled: false });
+    expect((await runtime.getPanels()).some((panel) => panel.kind === "starfield")).toBe(false);
+    expect((await runtime.getStatus()).scheduler.manualHold).toBeNull();
+    await runtime.updateConfig({ babyBirthDate: "2020-01-01", babyName: "BABY" });
+    expect((await runtime.getPanels()).some((panel) => panel.kind === "baby-age")).toBe(true);
+    await runtime.publish("baby-age");
+    expect((await runtime.getStatus()).display.currentPanel?.kind).toBe("baby-age");
+    await runtime.setSourceEnabled("local", false);
+    expect((await runtime.getStatus()).display.currentPanel?.kind).toBe("clock");
+    expect((await runtime.getStatus()).sourceHealth.find((source) => source.id === "local")?.status).toBe("disabled");
+  });
+
   it("restores dashboard overrides and applies quiet-hours edits after saved controls", async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "tidbytr-config-"));
     const config = testConfig({ dataDir });

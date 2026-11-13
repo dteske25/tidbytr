@@ -13,7 +13,7 @@ def main(config):
             children = [
                 render.Box(width = 64, height = 2, color = "#0b5"),
                 render.Padding(
-                    pad = (7, 2, 0, 0),
+                    pad = (display.get("timeX") or 7, 2, 0, 0),
                     child = render.Animation(
                         children = [
                             render.Text(content = time_text, font = "10x20", color = "#fff"),
@@ -22,8 +22,12 @@ def main(config):
                     ),
                 ),
                 render.Padding(
-                    pad = (15, 22, 0, 0),
+                    pad = (7, 22, 0, 0),
                     child = render.Text(content = date_text, color = "#28f"),
+                ),
+                render.Padding(
+                    pad = (51, 23, 0, 0),
+                    child = render.Text(content = display.get("period") or "", font = "tom-thumb", color = "#9AB"),
                 ),
                 render.Padding(
                     pad = (2, 30, 0, 0),

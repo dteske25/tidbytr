@@ -1,3 +1,4 @@
+import { calendarAge } from "./age.js";
 import { createHash } from "node:crypto";
 import type { AlertSeverity, Panel, RuntimeConfig } from "./types.js";
 
@@ -44,6 +45,14 @@ export interface SportsGame {
 export function buildPanels(config: RuntimeConfig, weather: WeatherSnapshot, sports: SportsSnapshot, now = new Date()): Panel[] {
   const createdAt = now.toISOString();
   const panels: Panel[] = [clockPanel(createdAt, config.timezone)];
+  const age = config.babyBirthDate ? calendarAge(config.babyBirthDate, now, config.timezone) : null;
+  if (age) {
+    panels.push({ id: "baby-age", kind: "baby-age", source: "local", title: config.babyName ? `${config.babyName}'s age` : "Baby age",
+      priority: 25, createdAt, ttlSeconds: 60, expiresAt: addSeconds(now, 60),
+      payload: { birthDate: config.babyBirthDate, name: config.babyName, timezone: config.timezone, ageDays: age.totalDays } });
+  }
+  if (config.starfieldEnabled) panels.push({ id: "starfield", kind: "starfield", source: "local", title: "Star flight",
+    priority: 10, createdAt, ttlSeconds: 60, expiresAt: addSeconds(now, 60), payload: {} });
 
   const forecastTime = weather.forecastObservedAt ?? createdAt;
   if (weather.forecast && Date.parse(forecastTime) + 900_000 > now.getTime()) {

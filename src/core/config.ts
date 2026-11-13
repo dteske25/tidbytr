@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { z } from "zod";
+import { validBirthDate } from "./age.js";
 import { DEFAULT_SCREEN_POLICY } from "./policy.js";
 import type { HomeAssistantOptions, RuntimeConfig, SanitizedConfig } from "./types.js";
 
@@ -11,7 +12,7 @@ const timeStringSchema = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:mm in 24-hour time");
 
-const kinds = ["clock", "nws-alert", "forecast", "upcoming-game", "live-score", "final-score"] as const;
+const kinds = ["clock", "baby-age", "starfield", "nws-alert", "forecast", "upcoming-game", "live-score", "final-score"] as const;
 const prioritiesSchema = z.object(Object.fromEntries(kinds.map((kind) => [kind, z.number().int().min(0).max(100).default(DEFAULT_SCREEN_POLICY.priorities[kind])])) as Record<typeof kinds[number], z.ZodDefault<z.ZodNumber>>);
 const cooldownSchema = z.object(Object.fromEntries(kinds.map((kind) => [kind, z.number().int().min(kind === "clock" ? 0 : 20).max(3600).default(DEFAULT_SCREEN_POLICY.cooldownSeconds[kind])])) as Record<typeof kinds[number], z.ZodDefault<z.ZodNumber>>);
 const screenPolicySchema = z.object({
@@ -24,6 +25,9 @@ export const homeAssistantOptionsSchema = z.object({
   tidbytApiToken: z.string().trim().default(""),
   tidbytDeviceId: z.string().trim().default(""),
   installationId: z.string().trim().regex(/^[A-Za-z0-9]+$/, "Tidbyt installation ID must be alphanumeric").default(DEFAULT_INSTALLATION_ID),
+  babyBirthDate: z.string().trim().refine((value) => value === "" || validBirthDate(value), "Expected a real birth date in YYYY-MM-DD format (1900 or later)").default(""),
+  babyName: z.string().trim().max(40).default(""),
+  starfieldEnabled: z.boolean().default(true),
   screenPolicy: screenPolicySchema,
   timezone: z.string().refine((value) => {
     try { new Intl.DateTimeFormat("en-US", { timeZone: value }); return true; } catch { return false; }
@@ -61,6 +65,9 @@ export function defaultOptions(): HomeAssistantOptions {
     longitude: -94.5786,
     nwsContact: "tidbytr@example.local",
     favoriteTeams: [],
+    babyBirthDate: "",
+    babyName: "",
+    starfieldEnabled: true,
     logLevel: "info",
     schedulerIntervalSeconds: 60,
     refreshIntervalSeconds: 600,
@@ -93,6 +100,9 @@ export function loadRuntimeConfig(): RuntimeConfig {
     tidbytApiToken: process.env.TIDBYTR_API_TOKEN,
     tidbytDeviceId: process.env.TIDBYTR_DEVICE_ID,
     installationId: process.env.TIDBYTR_INSTALLATION_ID,
+    babyBirthDate: process.env.TIDBYTR_BABY_BIRTH_DATE,
+    babyName: process.env.TIDBYTR_BABY_NAME,
+    starfieldEnabled: process.env.TIDBYTR_STARFIELD_ENABLED === undefined ? undefined : z.enum(["true", "false"]).parse(process.env.TIDBYTR_STARFIELD_ENABLED) === "true",
     timezone: process.env.TZ || process.env.TIDBYTR_TIMEZONE,
     latitude: process.env.TIDBYTR_LATITUDE ? Number(process.env.TIDBYTR_LATITUDE) : undefined,
     longitude: process.env.TIDBYTR_LONGITUDE ? Number(process.env.TIDBYTR_LONGITUDE) : undefined,

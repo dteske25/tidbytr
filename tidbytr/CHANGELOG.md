@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0
+
+- Change clock rendering to 12-hour time with AM/PM and no leading zero in both backends.
+- Add a configurable baby-age screen with calendar-correct months/days, optional name, and local-timezone day changes.
+- Add native animated star flight with a smooth four-second perspective loop.
+- Add Personal screens settings, HA options, and a Personal & ambient source toggle. Both new screens follow quiet hours, snooze, cooldowns, and alert precedence.
+- Migrate saved screen-policy keys and add real render/calendar/animation tests and previews.
+
+
 ## 0.6.0
 
 - Restore stock-firmware Tidbyt API delivery through a stable installation alongside Store apps.

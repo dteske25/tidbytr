@@ -10,6 +10,7 @@ import { defaultOptions } from "../../src/core/config.js";
 export function testConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return {
     ...defaultOptions(),
+    starfieldEnabled: false,
     tidbytApiToken: "test-token",
     tidbytDeviceId: "test-device",
     dataDir: "/tmp/tidbytr-test",

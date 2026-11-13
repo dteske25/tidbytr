@@ -22,6 +22,9 @@ You need a Gen 2 configured in the Tidbyt mobile app, its device ID/API key, Int
    nws_contact: "Tidbytr (you@example.com)"
    favorite_teams:
      - KC
+   baby_birth_date: ""
+   baby_name: ""
+   starfield_enabled: true
    log_level: info
    scheduler_interval_seconds: 60
    refresh_interval_seconds: 600
@@ -38,7 +41,7 @@ API acceptance confirms a server response, not physical display. Outbound HTTPS 
 ## Upgrade from 0.5 / HDK
 
 1. Back up the existing add-on and note its settings. If you flashed HDK, restore production firmware using [HDK's Back to Normal instructions](https://github.com/tidbyt/hdk#back-to-normal) for Gen 2. If already on stock firmware, no firmware change is needed. This server does not flash the device.
-2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.6.0**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
+2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.7.0**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
 3. Enter `tidbyt_api_token` and `tidbyt_device_id`, keeping your location, timezone, teams, and quiet hours.
 4. Remove the obsolete `display_base_url` option and any retained port 8788 mapping. Save and restart. The old `/current.webp` firmware feed is no longer served.
 5. Open the dashboard, check API acceptance, then try Show now and observe the actual device and animated weather app.
@@ -60,6 +63,20 @@ The dashboard separates the last API-accepted screen from the selected preview a
 | Add-on fails to start | Check its Log tab for the build/startup error. |
 
 Internet/cloud outages prevent new images reaching the device; previously uploaded content may remain in rotation. Server freshness checks cannot remove an image from an offline device. Tidbytr is not a sole-source weather-warning system.
+
+## Clock, baby age, and star flight
+
+The clock uses **12-hour time with AM/PM**, without a leading zero, in your configured timezone.
+
+Open **Personal screens** in the dashboard to set a birth date and optional name, and to enable/disable Star flight. Save personal screens to apply changes immediately. The baby screen stays hidden until a valid, non-future birth date is configured. It shows calendar months/days (then years/months) plus weeks or remaining days. Month-end and leap-day anniversaries clamp to the final day of that month. It is based on your timezone's calendar date, including across daylight-saving changes.
+
+The equivalent HA options are `baby_birth_date` (`YYYY-MM-DD`, empty disables), `baby_name` (optional), and `starfield_enabled` (default true). As with other ordinary settings, dashboard saves take ownership after a save; make later edits there. Personal data is entered in HA or the dashboard; repository samples use synthetic dates.
+
+Star flight is a smooth four-second animated loop of stars moving outward from a distant center, with subtle perspective streaks. Baby age and Star flight share the Personal & ambient source toggle. Both respect quiet hours and snooze; critical alerts retain precedence. Their priorities/cooldowns are editable in Screen priorities (defaults: baby 25 / 600 seconds, stars 10 / 300 seconds).
+
+`pnpm render:local` creates clock, synthetic baby-age, and animated starfield previews for both renderer paths.
+
+![Flying through stars](docs/assets/local/pixlet-starfield.gif)
 
 ## Screen artwork
 

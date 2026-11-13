@@ -16,7 +16,7 @@ Design at 64 by 32 native pixels. Inspect actual output at native size and integ
 7. Test user-visible contracts: bounds, gaps, meaningful condition differences, preserved values, duration, and stationary text across every decoded animation frame. Do not weaken thresholds to hide visual defects.
 8. Run release verification, regenerate the add-on bundle, and commit source and bundle together. Say whether physical-device testing remains outstanding.
 
-`pnpm render:fixtures` renders the general screen set. `pnpm render:weather` produces native PNG/WebP, GIF previews, galleries, and icon filmstrips. Ensure Pixlet v0.34.0 is on PATH.
+`pnpm render:fixtures` renders the general screen set. `pnpm render:local` renders 12-hour clocks, a synthetic baby-age example, and native star flight. Keep real birth dates out of public defaults and fixtures. Full-screen ambient animations may use the whole pixel grid; the icon-only motion constraint applies to weather/information screens. `pnpm render:weather` produces native PNG/WebP, GIF previews, galleries, and icon filmstrips. Ensure Pixlet v0.34.0 is on PATH.
 
 `src/renderer/weather.ts` owns weather interpretation and 16x16 sprites shared by Pixlet/Sharp. `src/renderer/pixlet/templates/forecast.star` owns the Pixlet layout. Starlark strings are not iterable: use `range(len(row))` and `row[x]`.
 
