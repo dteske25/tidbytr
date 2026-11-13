@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.2
+
+- Simplify the 12-hour clock to white time and a centered white date, separated by a one-pixel red line. Remove the top green bar, bottom blue rule, and AM/PM label in both rendering backends.
+
 ## 0.8.1
 
 - Set default rotation to 30 seconds of clock between each 15-second weather, baby-age, and star-flight screen. Existing saved durations remain editable in Rotation.

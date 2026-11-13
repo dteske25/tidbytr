@@ -44,7 +44,7 @@ API acceptance confirms a server response, not physical display. Outbound HTTPS 
 ## Upgrade from 0.5 / HDK
 
 1. Back up the existing add-on and note its settings. If you flashed HDK, restore production firmware using [HDK's Back to Normal instructions](https://github.com/tidbyt/hdk#back-to-normal) for Gen 2. If already on stock firmware, no firmware change is needed. This server does not flash the device.
-2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.8.1**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
+2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.8.2**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
 3. Enter `tidbyt_api_token` and `tidbyt_device_id`, keeping your location, timezone, teams, and quiet hours.
 4. Remove the obsolete `display_base_url` option and any retained port 8788 mapping. Save and restart. The old `/current.webp` firmware feed is no longer served.
 5. Open the dashboard, check API acceptance, then try Show now and observe the actual device and animated weather app.
@@ -89,6 +89,8 @@ Clock-led transitions request immediate display; repeated clock/data refreshes u
 The HA baseline options are `schedule_mode` (`clock-cycle` or `priority`), `clock_seconds` (20–3600), and `screen_seconds` (10–120). Clock duration must exceed other-screen duration in clock-led mode. Use the dashboard after saving settings there. Existing saved durations are preserved on update; set Rotation to 30/15 to apply these timings to an existing installation. Upgrading from 0.7 inherits the new clock-led defaults while preserving old priority/cooldown values for Priority mode.
 
 ## Clock, baby age, and star flight
+
+The 12-hour clock uses white time above a thin red divider and a centered white date below it.
 
 The clock uses **12-hour time with AM/PM**, without a leading zero, in your configured timezone.
 
