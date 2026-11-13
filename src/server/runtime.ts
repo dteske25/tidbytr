@@ -103,6 +103,10 @@ export class TidbytrRuntime {
     this.config = { ...this.config, ...next };
     this.configGeneration++;
     this.generation++;
+    const state = this.state();
+    if (state.manualHold && !this.panels(new Date()).some((panel) => panel.id === state.manualHold!.panelId)) {
+      this.store.setSchedulerState({ ...state, manualHold: null });
+    }
     if (weatherChanged) {
       this.weather = { forecast: null, alerts: [] };
       this.store.setSnapshot("nws", this.weather);
@@ -203,9 +207,9 @@ export class TidbytrRuntime {
         apiAccepted: accepted, lastPublish,
       },
       config: sanitizeConfig(this.config),
-      sourceHealth: (["clock", "nws", "sports"] as const).map((id) => state.disabledSources.includes(id)
+      sourceHealth: (["clock", "nws", "sports", "local"] as const).map((id) => state.disabledSources.includes(id)
         ? { id, label: id, status: "disabled", checkedAt: now.toISOString() }
-        : id === "clock" ? { id, label: "Clock baseline", status: "ok", checkedAt: now.toISOString() }
+        : id === "clock" || id === "local" ? { id, label: id === "clock" ? "Clock baseline" : "Personal & ambient", status: "ok", checkedAt: now.toISOString() }
         : this.health.get(id) ?? { id, label: id, status: "degraded", checkedAt: now.toISOString(), detail: "Awaiting first refresh" }),
       decisions: this.store.getDecisions(),
       scheduler: {
@@ -346,7 +350,7 @@ export class TidbytrRuntime {
   private makeWeatherProvider() { return new NwsProvider({ latitude: this.config.latitude, longitude: this.config.longitude, userAgent: this.config.nwsContact, initialSnapshot: this.weather, forecastRefreshMs: this.config.refreshIntervalSeconds * 1000 }); }
   private makeSportsProvider() { return new EspnSportsProvider({ favoriteTeams: this.config.favoriteTeams, initialSnapshot: this.sports }); }
   private isFrameFresh(frame: PublishedFrame | null, now: Date): boolean {
-    return Boolean(frame && Date.parse(frame.validUntil) > now.getTime() && !isExpired(frame.panel, now) && (frame.panel.kind !== "clock" || Math.floor(Date.parse(frame.renderedAt) / 60_000) === Math.floor(now.getTime() / 60_000)));
+    return Boolean(frame && Date.parse(frame.validUntil) > now.getTime() && !isExpired(frame.panel, now) && (!["clock", "baby-age"].includes(frame.panel.kind) || Math.floor(Date.parse(frame.renderedAt) / 60_000) === Math.floor(now.getTime() / 60_000)));
   }
   private decisionInterval(): number { return Math.min(this.config.screenPolicy.minimumDwellSeconds, this.config.schedulerIntervalSeconds); }
   private wake(): void { if (!this.stopped) this.scheduleNextPush(0); }

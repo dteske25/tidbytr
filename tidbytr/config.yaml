@@ -1,5 +1,5 @@
 name: Tidbytr
-version: 0.6.0
+version: 0.7.0
 slug: tidbytr
 description: Tidbyt stock-firmware app with priority weather, sports, and manual controls.
 url: https://github.com/dteske25/tidbytr
@@ -25,6 +25,9 @@ options:
   longitude: -94.5786
   nws_contact: tidbytr@example.local
   favorite_teams: []
+  baby_birth_date: ""
+  baby_name: ""
+  starfield_enabled: true
   log_level: info
   scheduler_interval_seconds: 60
   refresh_interval_seconds: 600
@@ -40,6 +43,9 @@ schema:
   nws_contact: str
   favorite_teams:
     - str
+  baby_birth_date: str?
+  baby_name: str?
+  starfield_enabled: bool
   log_level: list(trace|debug|info|warn|error)
   scheduler_interval_seconds: int(15,3600)
   refresh_interval_seconds: int(60,21600)

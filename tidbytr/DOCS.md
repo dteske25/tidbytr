@@ -4,9 +4,9 @@
 
 Required: `tidbyt_api_token`, `tidbyt_device_id`, `timezone`, `latitude`, `longitude`, and `nws_contact`. Get the key and device ID from the device's settings in the Tidbyt mobile app. Do not put real credentials in Git or screenshots.
 
-Optional: `installation_id` (stable alphanumeric ID, default `tidbytrmain`), `favorite_teams`, `log_level`, `scheduler_interval_seconds`, `refresh_interval_seconds`, and both `quiet_hours_start`/`quiet_hours_end` (`HH:mm`). Empty team lists disable sports. The old default `tidbytr-main` normalizes to `tidbytrmain`.
+Optional: `baby_birth_date` (YYYY-MM-DD, empty disables), `baby_name` (optional), `starfield_enabled` (default true), `installation_id` (stable alphanumeric ID, default `tidbytrmain`), `favorite_teams`, `log_level`, `scheduler_interval_seconds`, `refresh_interval_seconds`, and both `quiet_hours_start`/`quiet_hours_end` (`HH:mm`). Empty team lists disable sports. The old default `tidbytr-main` normalizes to `tidbytrmain`.
 
-For standalone development, corresponding environment variables are `TIDBYTR_API_TOKEN`, `TIDBYTR_DEVICE_ID`, `TIDBYTR_INSTALLATION_ID`, `TIDBYTR_TIMEZONE`, `TIDBYTR_LATITUDE`, `TIDBYTR_LONGITUDE`, `TIDBYTR_NWS_CONTACT`, and comma-separated `TIDBYTR_FAVORITE_TEAMS`. Dashboard defaults to port 8787 and data to `.tidbytr`; HA uses `/data`.
+For standalone development, corresponding environment variables are `TIDBYTR_API_TOKEN`, `TIDBYTR_DEVICE_ID`, `TIDBYTR_INSTALLATION_ID`, `TIDBYTR_TIMEZONE`, `TIDBYTR_LATITUDE`, `TIDBYTR_LONGITUDE`, `TIDBYTR_NWS_CONTACT`, comma-separated `TIDBYTR_FAVORITE_TEAMS`, `TIDBYTR_BABY_BIRTH_DATE`, `TIDBYTR_BABY_NAME`, and `TIDBYTR_STARFIELD_ENABLED` (`true` or `false`). Dashboard defaults to port 8787 and data to `.tidbytr`; HA uses `/data`.
 
 ## Stock-firmware delivery
 
@@ -27,7 +27,17 @@ The dashboard shows last accepted content, latest push result, a separate select
 - `POST /api/actions/push`: optional `panelId` and `holdSeconds` (20–3600, default 60). Requests immediate display with a selection hold.
 - `POST /api/actions/skip`: optional `panelId`, excluded until a replacement is successfully accepted.
 - `POST /api/actions/snooze`: `minutes` (1–1440, default 15), clears manual holds and selects clock/critical content.
-- `POST /api/actions/source`: `sourceId` and `enabled`. Clock cannot be disabled.
+- `POST /api/actions/source`: `sourceId` and `enabled`. Clock cannot be disabled. `local` controls Personal & ambient screens.
+
+## Local screens
+
+Clock uses 12-hour time with AM/PM and no leading zero, in the configured timezone. The Personal screens dashboard form updates birth date, optional name, and starfield visibility through `PUT /api/config` fields `babyBirthDate`, `babyName`, and `starfieldEnabled`. Empty/future birth dates omit the baby panel. A name longer than the pixel budget is abbreviated on the display while the full setting is preserved.
+
+Age is calendar-based: month-end/leap anniversaries clamp to the month's last day, and total days/weeks use local dates rather than elapsed hours. The age panel version changes at local midnight. It shows months/days below one year, years/months after, with weeks/remaining days beneath. No real birth date is included in public defaults or fixtures.
+
+Baby age and starfield use source `local`; its source toggle, snooze, quiet hours, cooldowns, and critical-alert precedence apply normally. Defaults: baby priority 25 and 600-second cooldown; starfield priority 10 and 300-second cooldown. Old saved policy objects inherit the new keys while keeping existing priorities. Disabling/hiding a manually held local screen clears the unavailable hold and selects a replacement.
+
+Starfield is generated on the native pixel grid, with 50 frames at 80 ms (four seconds) in an infinite WebP loop, under the normal 512 KiB bound. It needs no network provider. Both renderer paths use the same native starfield engine. `pnpm render:local` generates the clock, baby-age sample, GIF previews, and starfield motion strip. Physical device playback remains unmeasured.
 
 ## Priority and freshness
 

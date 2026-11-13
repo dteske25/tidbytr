@@ -1,6 +1,8 @@
 import sharp from "sharp";
 import type { FrameBundle, Panel, RuntimeConfig } from "../core/types.js";
 import type { SportsGame, WeatherAlert, WeatherSnapshot } from "../core/panels.js";
+import { clockDisplay, babyAgeDisplay } from "./local-screens.js";
+import { starfieldFrames, STARFIELD_DELAY_MS } from "./starfield.js";
 import { weatherDisplay, WEATHER_FRAME_DELAY_MS } from "./weather.js";
 import { COLORS, PixelCanvas, type Rgba } from "./canvas.js";
 import { glyphWidth } from "./pixelFont.js";
@@ -15,10 +17,20 @@ export class SharpRenderer implements DisplayRenderer {
 export async function renderPanel(panel: Panel, now = new Date()): Promise<FrameBundle> {
   const canvas = new PixelCanvas(COLORS.black);
   let canvases = [canvas];
+  let frameDelay = WEATHER_FRAME_DELAY_MS;
 
   switch (panel.kind) {
     case "clock":
       renderClock(canvas, now, (panel.payload as { timezone?: string } | null)?.timezone);
+      break;
+    case "baby-age": {
+      const baby = panel.payload as { birthDate: string; name: string; timezone: string };
+      renderBabyAge(canvas, babyAgeDisplay(baby.birthDate, baby.name, now, baby.timezone));
+      break;
+    }
+    case "starfield":
+      canvases = starfieldFrames();
+      frameDelay = STARFIELD_DELAY_MS;
       break;
     case "nws-alert":
       renderAlert(canvas, panel.payload as unknown as WeatherAlert);
@@ -49,7 +61,7 @@ export async function renderPanel(panel: Panel, now = new Date()): Promise<Frame
       channels: 4,
     },
   })
-    .webp({ lossless: true, quality: 100, loop: 0, delay: Array(canvases.length).fill(WEATHER_FRAME_DELAY_MS) })
+    .webp({ lossless: true, quality: 100, loop: 0, delay: Array(canvases.length).fill(frameDelay) })
     .toBuffer();
 
   return {
@@ -64,25 +76,21 @@ export async function renderPanel(panel: Panel, now = new Date()): Promise<Frame
 }
 
 function renderClock(canvas: PixelCanvas, now: Date, timezone = "UTC"): void {
-  const time = new Intl.DateTimeFormat("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: timezone,
-  }).format(now);
-  const date = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "2-digit",
-    timeZone: timezone,
-  })
-    .format(now)
-    .toUpperCase()
-    .replace(",", "");
-
-  canvas.drawText(time, 6, 7, COLORS.white, 2);
-  canvas.drawText(date, 15, 23, COLORS.blue, 1);
+  const display = clockDisplay(now, timezone);
+  canvas.drawText(display.time, Math.floor((64 - canvas.measureText(display.time, 3)) / 2), 5, COLORS.white, 3);
+  canvas.drawText(display.date, 7, 24, COLORS.blue);
+  canvas.drawText(display.period, 51, 24, COLORS.muted);
   canvas.fillRect(2, 2, 60, 2, COLORS.green);
-  canvas.fillRect(2, 29, 60, 1, COLORS.navy);
+  canvas.fillRect(2, 30, 60, 1, COLORS.navy);
+}
+
+function renderBabyAge(canvas: PixelCanvas, display: ReturnType<typeof babyAgeDisplay>): void {
+  const pink = hexColor("#E88AAA");
+  canvas.drawText(display.name, 3, 2, pink);
+  const heart = [".xx..xx.", "xxxxxxxx", "xxxxxxxx", ".xxxxxx.", "..xxxx..", "...xx..."];
+  for (const [y, row] of heart.entries()) for (const [x, pixel] of [...row].entries()) if (pixel === "x") canvas.setPixel(53 + x, 1 + y, pink);
+  canvas.drawText(display.primary, Math.floor((64 - canvas.measureText(display.primary, 2)) / 2), 11, COLORS.ink, 2);
+  canvas.drawText(display.secondary, 3, 25, hexColor("#A5B8D0"));
 }
 
 function renderAlert(canvas: PixelCanvas, alert: WeatherAlert): void {

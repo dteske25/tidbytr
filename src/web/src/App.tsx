@@ -11,6 +11,7 @@ import {
   Play,
   Settings,
   SkipForward,
+  Sparkles,
   Wifi,
   XCircle,
 } from "lucide-react";
@@ -31,6 +32,7 @@ const sourceIcons: Record<SourceId, typeof CloudSun> = {
   clock: Clock3,
   nws: CloudSun,
   sports: Gamepad2,
+  local: Sparkles,
 };
 
 export function App() {
@@ -88,7 +90,7 @@ export function App() {
       <aside className="sidebar">
         <div>
           <div className="brand">Tidbytr</div>
-          <div className="version">v0.6.0</div>
+          <div className="version">v0.7.0</div>
         </div>
 
         <nav aria-label="Main navigation">
@@ -228,6 +230,21 @@ export function App() {
             </section>
 
             {status ? <section className="rail-section">
+              <h2>Personal screens</h2>
+              <p>Age uses calendar months and days in {status.config.timezone}. Leave the birth date empty to hide it.</p>
+              <form key={`${status.config.babyBirthDate}-${status.config.babyName}-${status.config.starfieldEnabled}`} onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                void act("config", { babyBirthDate: String(data.get("babyBirthDate") ?? ""), babyName: String(data.get("babyName") ?? ""), starfieldEnabled: data.has("starfieldEnabled") }, "PUT");
+              }}>
+                <label className="policy-row">Birth date <input type="date" name="babyBirthDate" aria-label="Baby birth date" defaultValue={status.config.babyBirthDate} /></label>
+                <label className="policy-row">Name (optional) <input name="babyName" aria-label="Baby name" maxLength={40} defaultValue={status.config.babyName} /></label>
+                <label className="policy-row">Star flight <input type="checkbox" name="starfieldEnabled" aria-label="Star flight enabled" defaultChecked={status.config.starfieldEnabled} /></label>
+                <button className="outline-action" type="submit">Save personal screens</button>
+              </form>
+            </section> : null}
+
+            {status ? <section className="rail-section">
               <h2>Screen priorities</h2>
               <p>Higher priorities appear first. Cooldowns limit repeats; critical alerts may interrupt.</p>
               <form key={JSON.stringify(status.config.screenPolicy)} onSubmit={(event) => {
@@ -268,7 +285,7 @@ export function App() {
             <section className="rail-section">
               <h2>Source toggles</h2>
               <div className="toggle-list">
-                {(["clock", "nws", "sports"] as SourceId[]).map((sourceId) => {
+                {(["clock", "nws", "sports", "local"] as SourceId[]).map((sourceId) => {
                   const disabled = status?.scheduler.disabledSources.includes(sourceId) ?? false;
                   return (
                     <button
@@ -350,7 +367,7 @@ function fallbackHealth(): SourceHealth[] {
 }
 
 function sourceLabel(source: SourceId) {
-  return source === "nws" ? "NWS weather" : source === "sports" ? "Favorite teams" : "Clock baseline";
+  return source === "nws" ? "NWS weather" : source === "sports" ? "Favorite teams" : source === "local" ? "Personal & ambient" : "Clock baseline";
 }
 
 function panelKindLabel(kind: Panel["kind"] | undefined) {

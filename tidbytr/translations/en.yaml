@@ -8,6 +8,15 @@ configuration:
   installation_id:
     name: Installation ID
     description: Stable alphanumeric ID for Tidbytr in your app rotation. Keep it unchanged.
+  baby_birth_date:
+    name: Baby birth date
+    description: YYYY-MM-DD. Leave empty to disable the baby-age screen.
+  baby_name:
+    name: Baby name
+    description: Optional name shown on the age screen.
+  starfield_enabled:
+    name: Star flight
+    description: Include the flying-through-stars animation in Tidbytr selections.
   timezone:
     name: Timezone
     description: IANA timezone used by the scheduler.

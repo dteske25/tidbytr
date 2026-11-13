@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FrameBundle, Panel, RuntimeConfig } from "../core/types.js";
 import { weatherDisplay, type ForecastDisplayInput } from "./weather.js";
+import { clockDisplay, babyAgeDisplay } from "./local-screens.js";
 import { SharpRenderer } from "./renderer.js";
 import type { DisplayRenderer } from "./types.js";
 
@@ -22,6 +23,7 @@ export interface PixletRendererOptions {
 
 const supportedPixletPanels = new Set<Panel["kind"]>([
   "clock",
+  "baby-age",
   "forecast",
   "nws-alert",
   "upcoming-game",
@@ -111,12 +113,11 @@ export class PixletRenderer implements DisplayRenderer {
 function buildDisplayPayload(panel: Panel, now: Date, config: RuntimeConfig): Record<string, unknown> {
   switch (panel.kind) {
     case "clock":
-      const time = formatClockTime(now, config.timezone);
-      return {
-        time,
-        blinkTime: time.replace(":", " "),
-        date: formatClockDate(now, config.timezone),
-      };
+      return clockDisplay(now, config.timezone);
+    case "baby-age": {
+      const baby = panel.payload as { birthDate: string; name: string; timezone: string };
+      return babyAgeDisplay(baby.birthDate, baby.name, now, baby.timezone);
+    }
     case "forecast": {
       return weatherDisplay(panel.payload as ForecastDisplayInput);
     }
@@ -153,26 +154,6 @@ function buildDisplayPayload(panel: Panel, now: Date, config: RuntimeConfig): Re
     default:
       return {};
   }
-}
-
-function formatClockTime(now: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: timezone,
-  }).format(now);
-}
-
-function formatClockDate(now: Date, timezone: string): string {
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "2-digit",
-    timeZone: timezone,
-  })
-    .format(now)
-    .toUpperCase()
-    .replace(",", "");
 }
 
 function formatGameTime(value: string, timezone: string): string {

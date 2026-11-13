@@ -32,7 +32,7 @@ const snoozeBodySchema = z.object({
 });
 
 const sourceBodySchema = z.object({
-  sourceId: z.enum(["clock", "nws", "sports"]),
+  sourceId: z.enum(["clock", "nws", "sports", "local"]),
   enabled: z.boolean(),
 });
 
