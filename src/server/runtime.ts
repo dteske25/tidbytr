@@ -5,7 +5,7 @@ import { normalizeOptions, sanitizeConfig } from "../core/config.js";
 import { buildPanels, clockPanel, type SportsSnapshot, type WeatherSnapshot } from "../core/panels.js";
 import { LocalDisplayPublisher, validateDisplayFrame } from "../core/publisher.js";
 import { TidbytCloudTransport, type DisplayTransport } from "../core/transport.js";
-import { choosePanel, isExpired, markSkipped, recordShown, setSourceEnabled, snoozeUntil } from "../core/scheduler.js";
+import { CLOCK_CYCLE_KINDS, cycleRemainingMilliseconds, choosePanel, isExpired, markSkipped, recordShown, setSourceEnabled, snoozeUntil } from "../core/scheduler.js";
 import type { Panel, PublishedFrame, RuntimeConfig, SchedulerDecision, SourceHealth, SourceId, TidbytrStatus, SanitizedConfig } from "../core/types.js";
 import { createDefaultRenderer } from "../renderer/pixlet.js";
 import { SharpRenderer } from "../renderer/renderer.js";
@@ -96,13 +96,20 @@ export class TidbytrRuntime {
   getEditableConfig(): SanitizedConfig { return sanitizeConfig(this.config); }
 
   async updateConfig(input: unknown): Promise<SanitizedConfig> {
-    const next = normalizeOptions({ ...this.config, ...(input as object) });
+    const changes = input as Partial<RuntimeConfig>;
+    const policyChanges = changes?.screenPolicy;
+    const next = normalizeOptions({ ...this.config, ...changes,
+      ...(policyChanges && typeof policyChanges === "object" && !Array.isArray(policyChanges)
+        ? { screenPolicy: { ...this.config.screenPolicy, ...policyChanges } } : {}),
+    });
     const weatherChanged = next.latitude !== this.config.latitude || next.longitude !== this.config.longitude || next.nwsContact !== this.config.nwsContact || next.refreshIntervalSeconds !== this.config.refreshIntervalSeconds;
     const sportsChanged = JSON.stringify(next.favoriteTeams) !== JSON.stringify(this.config.favoriteTeams);
+    const modeChanged = next.screenPolicy.mode !== this.config.screenPolicy.mode;
     this.store.setOptions(next);
     this.config = { ...this.config, ...next };
     this.configGeneration++;
     this.generation++;
+    if (modeChanged) this.store.setSchedulerState({ ...this.state(), showing: null, cycleNextIndex: 0, manualHold: null });
     const state = this.state();
     if (state.manualHold && !this.panels(new Date()).some((panel) => panel.id === state.manualHold!.panelId)) {
       this.store.setSchedulerState({ ...state, manualHold: null });
@@ -273,7 +280,8 @@ export class TidbytrRuntime {
           apiToken: this.config.tidbytApiToken, deviceId: this.config.tidbytDeviceId,
           installationId: this.config.installationId,
           isCurrent: () => !this.closed && generation === this.generation && !isExpired(selected, new Date(now.getTime() + performance.now() - startedAt)),
-          background: !selected.critical && !panelId && !(hold && Date.parse(hold.until) > now.getTime()),
+          background: !selected.critical && !panelId && !(hold && Date.parse(hold.until) > now.getTime())
+            && !(this.config.screenPolicy.mode === "clock-cycle" && this.state().showing?.panelId !== selected.id),
         });
         this.store.setLastPublish(result);
         if (!result.ok) throw new Error(result.message);
@@ -284,7 +292,13 @@ export class TidbytrRuntime {
           delivery: "tidbyt-cloud", deviceId: result.deviceId, installationId: result.installationId,
           validUntil: new Date(Math.min(Date.parse(selected.expiresAt), now.getTime() + 60_000)).toISOString(),
           sha256: createHash("sha256").update(rendered.webp).digest("hex"), degradedReason });
-        let state = recordShown(this.state(), selected, now);
+        let state = recordShown(this.state(), selected, now, this.config.screenPolicy);
+        if (degradedReason && this.config.screenPolicy.mode === "clock-cycle") {
+          const failedKind = candidates.find((candidate) => candidate.id === decision.selectedPanelId)?.kind;
+          const failedIndex = failedKind ? CLOCK_CYCLE_KINDS.indexOf(failedKind) : -1;
+          if (failedIndex >= 0) state = { ...state, cycleNextIndex: (failedIndex + 1) % CLOCK_CYCLE_KINDS.length,
+            showing: { panelId: selected.id, startedAt: now.toISOString(), version: selected.version ?? "" }, manualHold: null };
+        }
         if (panelId && selected.id === panelId && !degradedReason) state = { ...state, manualHold: { panelId, until: new Date(now.getTime() + holdSeconds * 1000).toISOString() } };
         this.store.setSchedulerState(state);
         const published: SchedulerDecision = { ...decision, selectedPanelId: selected.id, selectedPanelTitle: selected.title, result: "published", reason: degradedReason ? `Degraded clock fallback: ${degradedReason}` : decision.reason };
@@ -353,6 +367,10 @@ export class TidbytrRuntime {
     return Boolean(frame && Date.parse(frame.validUntil) > now.getTime() && !isExpired(frame.panel, now) && (!["clock", "baby-age"].includes(frame.panel.kind) || Math.floor(Date.parse(frame.renderedAt) / 60_000) === Math.floor(now.getTime() / 60_000)));
   }
   private decisionInterval(): number { return Math.min(this.config.screenPolicy.minimumDwellSeconds, this.config.schedulerIntervalSeconds); }
+  private nextPublishDelay(now = new Date()): number {
+    const remaining = cycleRemainingMilliseconds({ panels: this.panels(now), state: this.state(), now, policy: this.config.screenPolicy });
+    return Math.max(50, Math.min(this.decisionInterval() * 1000, 60_000 - now.getTime() % 60_000, remaining ?? Infinity));
+  }
   private wake(): void { if (!this.stopped) this.scheduleNextPush(0); }
   private scheduleNextPush(delayMs: number): void {
     if (this.stopped || this.closed) return;
@@ -361,7 +379,7 @@ export class TidbytrRuntime {
     this.schedulerTimer = setTimeout(() => {
       this.schedulerTimer = null;
       void this.publish().catch((error: unknown) => this.logger?.warn({ error: message(error) }, "Scheduled publish failed")).finally(() => {
-        if (!this.stopped && !this.schedulerTimer) this.scheduleNextPush(Math.min(this.decisionInterval() * 1000, 60_000 - Date.now() % 60_000));
+        if (!this.stopped && !this.schedulerTimer) this.scheduleNextPush(this.nextPublishDelay());
       });
     }, delayMs);
   }

@@ -5,12 +5,14 @@ import type { SportsSnapshot, WeatherSnapshot } from "../../src/core/panels.js";
 import type { DisplayRenderer } from "../../src/renderer/types.js";
 import type { SnapshotProvider } from "../../src/server/runtime.js";
 import { SharpRenderer } from "../../src/renderer/renderer.js";
+import { DEFAULT_SCREEN_POLICY } from "../../src/core/policy.js";
 import { defaultOptions } from "../../src/core/config.js";
 
 export function testConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return {
     ...defaultOptions(),
     starfieldEnabled: false,
+    screenPolicy: { ...structuredClone(DEFAULT_SCREEN_POLICY), mode: "priority" },
     tidbytApiToken: "test-token",
     tidbytDeviceId: "test-device",
     dataDir: "/tmp/tidbytr-test",

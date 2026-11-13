@@ -90,7 +90,7 @@ export function App() {
       <aside className="sidebar">
         <div>
           <div className="brand">Tidbytr</div>
-          <div className="version">v0.7.0</div>
+          <div className="version">v0.8.0</div>
         </div>
 
         <nav aria-label="Main navigation">
@@ -141,9 +141,10 @@ export function App() {
                   <p>{publishedPanel ? `Source: ${sourceLabel(publishedPanel.source)}` : "Source: none"}</p>
                 </div>
                 <div className="panel-meta">
-                  <span>Priority: {publishedPanel?.priority ?? "--"}</span>
+                  {status?.config.screenPolicy.mode === "clock-cycle" ? <span>Requested slot: {!publishedPanel ? "--" : publishedPanel.critical ? "Alert override" : status.scheduler.manualHold && status.scheduler.manualHold.panelId === publishedPanel.id ? "Manual hold" : `${publishedPanel?.kind === "clock" ? status.config.screenPolicy.clockSeconds : status.config.screenPolicy.screenSeconds}s`}</span>
+                    : <span>Priority: {publishedPanel?.priority ?? "--"}</span>}
                   <span>Slot: {panelKindLabel(publishedPanel?.kind)}</span>
-                  <span>TTL: {publishedPanel ? `${publishedPanel.ttlSeconds}s` : "--"}</span>
+                  {status?.config.screenPolicy.mode === "priority" ? <span>Data validity: {publishedPanel ? `${publishedPanel.ttlSeconds}s` : "--"}</span> : null}
                 </div>
               </div>
 
@@ -245,6 +246,26 @@ export function App() {
             </section> : null}
 
             {status ? <section className="rail-section">
+              <h2>Rotation</h2>
+              <p>Clock → Weather → Clock → Baby age → Clock → Stars. Disabled or unavailable screens are skipped; critical alerts can interrupt.</p>
+              <form key={`rotation-${status.config.screenPolicy.mode}-${status.config.screenPolicy.clockSeconds}-${status.config.screenPolicy.screenSeconds}`} onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                void act("config", { screenPolicy: {
+                  mode: String(data.get("mode")), clockSeconds: Number(data.get("clockSeconds")), screenSeconds: Number(data.get("screenSeconds")),
+                } }, "PUT");
+              }}>
+                <label className="policy-row">Mode <select name="mode" aria-label="Scheduling mode" defaultValue={status.config.screenPolicy.mode}>
+                  <option value="clock-cycle">Clock-led cycle</option><option value="priority">Priority scheduling</option>
+                </select></label>
+                <label className="policy-row">Clock (seconds) <input name="clockSeconds" aria-label="Clock slot seconds" type="number" min="20" max="3600" required defaultValue={status.config.screenPolicy.clockSeconds} /></label>
+                <label className="policy-row">Other screens (seconds) <input name="screenSeconds" aria-label="Other screen slot seconds" type="number" min="10" max="120" required defaultValue={status.config.screenPolicy.screenSeconds} /></label>
+                <button className="outline-action" type="submit">Save rotation</button>
+              </form>
+              <p>Slot durations apply to the clock-led cycle. Priority mode uses priorities and cooldowns, including sports and ordinary advisories.</p>
+            </section> : null}
+
+            {status?.config.screenPolicy.mode === "priority" ? <section className="rail-section">
               <h2>Screen priorities</h2>
               <p>Higher priorities appear first. Cooldowns limit repeats; critical alerts may interrupt.</p>
               <form key={JSON.stringify(status.config.screenPolicy)} onSubmit={(event) => {
@@ -252,6 +273,7 @@ export function App() {
                 const data = new FormData(event.currentTarget);
                 const policy = status.config.screenPolicy;
                 void act("config", { screenPolicy: {
+                  ...policy,
                   minimumDwellSeconds: Number(data.get("dwell")),
                   priorities: Object.fromEntries(Object.keys(policy.priorities).map((kind) => [kind, Number(data.get(`priority-${kind}`))])),
                   cooldownSeconds: Object.fromEntries(Object.keys(policy.cooldownSeconds).map((kind) => [kind, Number(data.get(`cooldown-${kind}`))])),
@@ -279,7 +301,9 @@ export function App() {
               <div className="url-box">Device: {status?.config.tidbytDeviceId || "Not configured"}</div>
               <p>App ID: {status?.config.installationId ?? "tidbytrmain"}</p>
               {!status?.display.configured ? <p className="config-warning">Set tidbyt_api_token and tidbyt_device_id in the add-on configuration.</p> : null}
-              <p>Scheduled updates share rotation with Store apps. Show now and critical alerts request immediate display. API acceptance does not confirm the physical display.</p>
+              <p>{status?.config.screenPolicy.mode === "clock-cycle"
+                ? "Clock-led cycle requests immediate changes at slot boundaries. For closest timing, leave only Tidbytr enabled in the Tidbyt app rotation. Store apps and cloud delay can change physical screen time."
+                : "Scheduled updates share rotation with Store apps. Show now and critical alerts request immediate display."} API acceptance does not confirm the physical display.</p>
             </section>
 
             <section className="rail-section">

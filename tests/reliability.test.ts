@@ -5,13 +5,15 @@ import { afterEach, describe, expect, it } from "vitest";
 import { buildPanels, type WeatherSnapshot } from "../src/core/panels.js";
 import { DEFAULT_SCREEN_POLICY } from "../src/core/policy.js";
 import { LocalDisplayPublisher } from "../src/core/publisher.js";
-import { choosePanel, defaultSchedulerState, recordShown } from "../src/core/scheduler.js";
+import { choosePanel as selectPanel, defaultSchedulerState, recordShown } from "../src/core/scheduler.js";
 import { NwsProvider } from "../src/providers/nws.js";
 import { EspnSportsProvider } from "../src/providers/sports.js";
 import { TidbytCloudTransport } from "../src/core/transport.js";
 import { TidbytrRuntime } from "../src/server/runtime.js";
 import { TidbytrStore } from "../src/storage/store.js";
 import { FakeCloudTransport, FakeRenderer, FakeSportsProvider, FakeWeatherProvider, testConfig } from "./helpers/fakes.js";
+
+const choosePanel = (request: Parameters<typeof selectPanel>[0]) => selectPanel({ ...request, policy: request.policy ?? testConfig().screenPolicy });
 
 const now = new Date("2026-10-16T12:00:00Z");
 const after = (seconds: number) => new Date(now.getTime() + seconds * 1000);
@@ -334,7 +336,7 @@ describe("priority policy over time", () => {
   });
 
   it("honors custom priorities and dwell rules", () => {
-    const config = testConfig({ screenPolicy: { ...DEFAULT_SCREEN_POLICY, minimumDwellSeconds: 40, priorities: { ...DEFAULT_SCREEN_POLICY.priorities, forecast: 95 } } });
+    const config = testConfig({ screenPolicy: { ...DEFAULT_SCREEN_POLICY, mode: "priority", minimumDwellSeconds: 40, priorities: { ...DEFAULT_SCREEN_POLICY.priorities, forecast: 95 } } });
     const panels = buildPanels(config, weather, { games: [{ id: "live", team: "KC", opponent: "DEN", startsAt: now.toISOString(), status: "live" }] }, now);
     const first = choosePanel({ panels, now, state: defaultSchedulerState(), policy: config.screenPolicy });
     expect(first.selectedPanelId).toBe("forecast");

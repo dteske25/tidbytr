@@ -17,6 +17,15 @@ configuration:
   starfield_enabled:
     name: Star flight
     description: Include the flying-through-stars animation in Tidbytr selections.
+  schedule_mode:
+    name: Scheduling mode
+    description: Clock-led cycle alternates longer clock slots with weather, baby age, and stars. Priority mode uses priorities/cooldowns.
+  clock_seconds:
+    name: Clock duration
+    description: Clock-led cycle clock slot, longer than other-screen duration.
+  screen_seconds:
+    name: Other screen duration
+    description: Weather, baby-age, and starfield slot duration in the clock-led cycle.
   timezone:
     name: Timezone
     description: IANA timezone used by the scheduler.

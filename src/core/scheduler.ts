@@ -1,10 +1,14 @@
 import crypto from "node:crypto";
-import type { Panel, SchedulerDecision, SchedulerRequest, SchedulerState, SourceId } from "./types.js";
+import type { ScreenPolicy } from "./policy.js";
+import type { PanelKind, Panel, SchedulerDecision, SchedulerRequest, SchedulerState, SourceId } from "./types.js";
 
 import { DEFAULT_SCREEN_POLICY } from "./policy.js";
 
+export const CLOCK_CYCLE_KINDS: readonly PanelKind[] = ["forecast", "baby-age", "starfield"];
+
 export function defaultSchedulerState(quietHours = null as SchedulerState["quietHours"]): SchedulerState {
   return {
+    cycleNextIndex: 0,
     snoozedUntil: null,
     skippedPanelIds: [],
     disabledSources: [],
@@ -44,6 +48,7 @@ export function choosePanel(request: SchedulerRequest): SchedulerDecision {
   const manual = request.panels.find((panel) => panel.id === manualId && !isExpired(panel, now) && !request.state.disabledSources.includes(panel.source));
   if (manual) return decision(now, manual, "Manual show requested", "selected", skipped);
   if (request.manualPanelId) skipped.push({ panelId: request.manualPanelId, reason: "Manual panel unavailable" });
+  if (policy.mode === "clock-cycle") return chooseClockCycle(request, eligible, skipped, policy);
   if (dwellActive && current) return decision(now, current, "Minimum display time", "selected", skipped);
   const ready = eligible.filter((panel) => {
     const last = history[panel.id];
@@ -62,17 +67,61 @@ export function choosePanel(request: SchedulerRequest): SchedulerDecision {
   return decision(now, selected, selected ? selectionReason(selected) : "No eligible panels", selected ? "selected" : "not-shown", skipped);
 }
 
+function chooseClockCycle(request: SchedulerRequest, eligible: Panel[], skipped: SchedulerDecision["skipped"], policy: ScreenPolicy): SchedulerDecision {
+  const { now, state } = request;
+  const clock = eligible.find((panel) => panel.kind === "clock");
+  const current = eligible.find((panel) => panel.id === state.showing?.panelId);
+  const elapsed = state.showing ? Math.max(0, now.getTime() - Date.parse(state.showing.startedAt)) : Infinity;
+  for (const panel of eligible) {
+    if (panel.kind !== "clock" && !CLOCK_CYCLE_KINDS.includes(panel.kind)) skipped.push({ panelId: panel.id, reason: "Not part of clock-led cycle" });
+  }
+  const selected = (panel: Panel, reason: string) => decision(now, panel, reason, "selected", skipped);
+  if (current?.kind === "clock" && elapsed < policy.clockSeconds * 1000) return selected(current, "Clock interval");
+  if (current && CLOCK_CYCLE_KINDS.includes(current.kind)) {
+    if (elapsed < policy.screenSeconds * 1000) return selected(current, "Cycle screen interval");
+    if (clock) return selected(clock, "Clock between screens");
+  }
+  // Start with clock, and return to it after interruptions or unavailable content.
+  if ((!current || current.kind !== "clock") && clock) return selected(clock, "Clock interval");
+  const cursor = Number.isInteger(state.cycleNextIndex) ? ((state.cycleNextIndex % CLOCK_CYCLE_KINDS.length) + CLOCK_CYCLE_KINDS.length) % CLOCK_CYCLE_KINDS.length : 0;
+  for (let offset = 0; offset < CLOCK_CYCLE_KINDS.length; offset++) {
+    const kind = CLOCK_CYCLE_KINDS[(cursor + offset) % CLOCK_CYCLE_KINDS.length];
+    const panel = eligible.find((candidate) => candidate.kind === kind);
+    if (panel) return selected(panel, `Clock-led cycle: ${panel.title}`);
+  }
+  return decision(now, clock ?? null, clock ? "Clock while cycle screens are unavailable" : "No eligible panels", clock ? "selected" : "not-shown", skipped);
+}
+
+/** Wake at a slot/hold boundary even when regular refreshes are aligned to a minute. */
+export function cycleRemainingMilliseconds(request: SchedulerRequest): number | null {
+  const policy = request.policy ?? DEFAULT_SCREEN_POLICY;
+  if (policy.mode !== "clock-cycle") return null;
+  const hold = request.state.manualHold;
+  const heldFor = hold ? Date.parse(hold.until) - request.now.getTime() : 0;
+  if (heldFor > 0) return heldFor;
+  const showing = request.state.showing;
+  const current = request.panels.find((panel) => panel.id === showing?.panelId);
+  if (!current || !showing || current.critical) return null;
+  const duration = current.kind === "clock" ? policy.clockSeconds : CLOCK_CYCLE_KINDS.includes(current.kind) ? policy.screenSeconds : null;
+  if (duration === null) return null;
+  const remaining = duration * 1000 - (request.now.getTime() - Date.parse(showing.startedAt));
+  return remaining > 0 ? remaining : null;
+}
+
 /** Commit display history only after successful publication, never on status reads. */
-export function recordShown(state: SchedulerState, panel: Panel, now: Date): SchedulerState {
+export function recordShown(state: SchedulerState, panel: Panel, now: Date, policy: ScreenPolicy = DEFAULT_SCREEN_POLICY): SchedulerState {
   const version = panel.version ?? "";
-  const continuing = state.showing?.panelId === panel.id && state.showing.version === version;
+  const samePanel = state.showing?.panelId === panel.id;
+  const continuing = samePanel && (policy.mode === "clock-cycle" || state.showing?.version === version);
+  const index = CLOCK_CYCLE_KINDS.indexOf(panel.kind);
   const previous = state.history[panel.id];
   const activeHistory = Object.fromEntries(Object.entries(state.history)
     .filter(([, entry]) => now.getTime() - Date.parse(entry.lastShownAt) < 7 * 86400_000));
   return {
     ...state, skippedPanelIds: [],
+    cycleNextIndex: policy.mode === "clock-cycle" && index >= 0 ? (index + 1) % CLOCK_CYCLE_KINDS.length : state.cycleNextIndex,
     manualHold: state.manualHold && Date.parse(state.manualHold.until) > now.getTime() ? state.manualHold : null,
-    showing: continuing ? state.showing : { panelId: panel.id, startedAt: now.toISOString(), version },
+    showing: continuing && state.showing ? { ...state.showing, version } : { panelId: panel.id, startedAt: now.toISOString(), version },
     history: { ...activeHistory, [panel.id]: { lastShownAt: now.toISOString(), version, showCount: (previous?.showCount ?? 0) + (continuing ? 0 : 1) } },
   };
 }
