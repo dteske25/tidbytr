@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+
+- Restore stock-firmware Tidbyt API delivery through a stable installation alongside Store apps.
+- Preserve scheduling, provider caches, quiet hours, and controls. Background ordinary updates coexist with Store apps; manual shows and critical alerts request immediate display.
+- Add bounded cloud retries, credential redaction, HA credential migration/key rotation, and honest API-acceptance status. Remove the HDK listener and port 8788.
+- Redesign weather with shared condition-specific day/night pixel artwork, readable temperature/high/low rows, and two-second icon animation while text stays still.
+- Add a reusable pixel-display design skill, animation tests, and native/GIF review fixtures. Update installation and migration documentation.
+
+
 ## 0.5.0
 
 - Add configurable priorities, dwell/cooldown rules, meaningful-change scheduling, and display history.

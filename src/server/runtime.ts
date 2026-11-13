@@ -4,8 +4,9 @@ import type { FastifyBaseLogger } from "fastify";
 import { normalizeOptions, sanitizeConfig } from "../core/config.js";
 import { buildPanels, clockPanel, type SportsSnapshot, type WeatherSnapshot } from "../core/panels.js";
 import { LocalDisplayPublisher, validateDisplayFrame } from "../core/publisher.js";
+import { TidbytCloudTransport, type DisplayTransport } from "../core/transport.js";
 import { choosePanel, isExpired, markSkipped, recordShown, setSourceEnabled, snoozeUntil } from "../core/scheduler.js";
-import type { Panel, PublishedFrame, RuntimeConfig, SchedulerDecision, SourceHealth, SourceId, TidbytrStatus } from "../core/types.js";
+import type { Panel, PublishedFrame, RuntimeConfig, SchedulerDecision, SourceHealth, SourceId, TidbytrStatus, SanitizedConfig } from "../core/types.js";
 import { createDefaultRenderer } from "../renderer/pixlet.js";
 import { SharpRenderer } from "../renderer/renderer.js";
 import type { DisplayRenderer } from "../renderer/types.js";
@@ -23,6 +24,7 @@ export interface TidbytrRuntimeOptions {
   weatherProvider?: SnapshotProvider<WeatherSnapshot>;
   sportsProvider?: SnapshotProvider<SportsSnapshot>;
   publisher?: LocalDisplayPublisher;
+  transport?: DisplayTransport;
   renderer?: DisplayRenderer;
   logger?: FastifyBaseLogger;
   sourceTimeoutMs?: number;
@@ -34,6 +36,7 @@ export class TidbytrRuntime {
   private weatherProvider: SnapshotProvider<WeatherSnapshot>;
   private sportsProvider: SnapshotProvider<SportsSnapshot>;
   private readonly publisher: LocalDisplayPublisher;
+  private readonly transport: DisplayTransport;
   private readonly renderer: DisplayRenderer;
   private readonly fallback = new SharpRenderer();
   private readonly logger?: FastifyBaseLogger;
@@ -54,12 +57,13 @@ export class TidbytrRuntime {
 
   constructor(options: TidbytrRuntimeOptions) {
     this.store = options.store ?? new TidbytrStore(path.join(options.config.dataDir, "tidbytr.sqlite"));
-    this.config = { ...options.config, ...this.store.getOptions(options.config) };
+    this.config = { ...options.config, ...normalizeOptions(this.store.getOptions(options.config)) };
     this.weather = this.store.getSnapshot<WeatherSnapshot>("nws") ?? { forecast: null, alerts: [] };
     this.sports = this.store.getSnapshot<SportsSnapshot>("sports") ?? { games: [] };
     this.weatherProvider = options.weatherProvider ?? this.makeWeatherProvider();
     this.sportsProvider = options.sportsProvider ?? this.makeSportsProvider();
     this.publisher = options.publisher ?? new LocalDisplayPublisher({ dataDir: this.config.dataDir });
+    this.transport = options.transport ?? new TidbytCloudTransport();
     this.renderer = options.renderer ?? createDefaultRenderer();
     this.logger = options.logger;
     this.sourceTimeoutMs = options.sourceTimeoutMs ?? 20_000;
@@ -89,9 +93,9 @@ export class TidbytrRuntime {
     this.nextSchedulerRunAt = null;
   }
   getRuntimeConfig(): RuntimeConfig { return this.config; }
-  getEditableConfig(): RuntimeConfig { return sanitizeConfig(this.config); }
+  getEditableConfig(): SanitizedConfig { return sanitizeConfig(this.config); }
 
-  async updateConfig(input: unknown): Promise<RuntimeConfig> {
+  async updateConfig(input: unknown): Promise<SanitizedConfig> {
     const next = normalizeOptions({ ...this.config, ...(input as object) });
     const weatherChanged = next.latitude !== this.config.latitude || next.longitude !== this.config.longitude || next.nwsContact !== this.config.nwsContact || next.refreshIntervalSeconds !== this.config.refreshIntervalSeconds;
     const sportsChanged = JSON.stringify(next.favoriteTeams) !== JSON.stringify(this.config.favoriteTeams);
@@ -114,7 +118,7 @@ export class TidbytrRuntime {
     this.refreshes.clear();
     for (const timer of this.sourceTimers.values()) clearTimeout(timer);
     this.sourceTimers.clear();
-    await this.publish();
+    await this.publish().catch((error: unknown) => this.logger?.warn({ error: message(error) }, "Settings saved; cloud push failed"));
     if (!this.stopped) void this.refreshSources();
     return sanitizeConfig(this.config);
   }
@@ -187,15 +191,16 @@ export class TidbytrRuntime {
     const next = choosePanel({ panels, now, state, policy: this.config.screenPolicy, timeZone: this.config.timezone });
     const frame = this.store.getPublishedFrame();
     const lastPublish = this.store.getLastPublish();
-    const lastPull = this.store.getLastPull();
+    const configured = Boolean(this.config.tidbytApiToken && this.config.tidbytDeviceId);
+    const accepted = Boolean(configured && lastPublish?.ok && lastPublish.deviceId === this.config.tidbytDeviceId && lastPublish.installationId === this.config.installationId);
+    const acceptedFrame = Boolean(configured && frame?.delivery === "tidbyt-cloud" && frame.deviceId === this.config.tidbytDeviceId && frame.installationId === this.config.installationId);
     return {
       display: {
-        delivery: "hdk-local-pull", width: 64, height: 32,
-        remoteUrl: this.config.displayBaseUrl ? `${this.config.displayBaseUrl}/current.webp` : null,
-        currentFrame: frame ? { panelId: frame.panel.id, renderedAt: frame.renderedAt } : null,
-        currentPanel: frame?.panel ?? null,
-        fresh: this.isFrameFresh(frame, now), degradedReason: frame?.degradedReason ?? null,
-        online: Boolean(lastPull && now.getTime() - Date.parse(lastPull) <= this.config.displayPollingWindowSeconds * 1000), lastPublish, lastPull,
+        delivery: "tidbyt-cloud", width: 64, height: 32, configured,
+        currentFrame: acceptedFrame && frame ? { panelId: frame.panel.id, renderedAt: frame.renderedAt } : null,
+        currentPanel: acceptedFrame ? frame?.panel ?? null : null,
+        fresh: acceptedFrame && this.isFrameFresh(frame, now), degradedReason: acceptedFrame ? frame?.degradedReason ?? null : null,
+        apiAccepted: accepted, lastPublish,
       },
       config: sanitizeConfig(this.config),
       sourceHealth: (["clock", "nws", "sports"] as const).map((id) => state.disabledSources.includes(id)
@@ -259,12 +264,22 @@ export class TidbytrRuntime {
     const commit = this.commitTail.then(async () => {
       if (this.closed || generation !== this.generation || isExpired(selected, new Date(now.getTime() + performance.now() - startedAt))) return { decision: { ...decision, result: "not-shown" as const, reason: "Superseded render" }, panel: null };
       try {
-        const result = await this.publisher.publish(rendered);
+        const hold = this.state().manualHold;
+        const result = await this.transport.push(rendered, {
+          apiToken: this.config.tidbytApiToken, deviceId: this.config.tidbytDeviceId,
+          installationId: this.config.installationId,
+          isCurrent: () => !this.closed && generation === this.generation && !isExpired(selected, new Date(now.getTime() + performance.now() - startedAt)),
+          background: !selected.critical && !panelId && !(hold && Date.parse(hold.until) > now.getTime()),
+        });
+        this.store.setLastPublish(result);
+        if (!result.ok) throw new Error(result.message);
+        if (this.closed || generation !== this.generation) return { decision: { ...decision, result: "not-shown" as const, reason: "Superseded commit" }, panel: null };
+        await this.publisher.publish(rendered);
         if (this.closed || generation !== this.generation) return { decision: { ...decision, result: "not-shown" as const, reason: "Superseded commit" }, panel: null };
         this.store.setPublishedFrame({ panel: selected, renderedAt: rendered.renderedAt,
+          delivery: "tidbyt-cloud", deviceId: result.deviceId, installationId: result.installationId,
           validUntil: new Date(Math.min(Date.parse(selected.expiresAt), now.getTime() + 60_000)).toISOString(),
           sha256: createHash("sha256").update(rendered.webp).digest("hex"), degradedReason });
-        this.store.setLastPublish(result);
         let state = recordShown(this.state(), selected, now);
         if (panelId && selected.id === panelId && !degradedReason) state = { ...state, manualHold: { panelId, until: new Date(now.getTime() + holdSeconds * 1000).toISOString() } };
         this.store.setSchedulerState(state);
@@ -281,20 +296,12 @@ export class TidbytrRuntime {
     return commit;
   }
   push(panelId?: string, now = new Date()) { return this.publish(panelId, now); }
-  async getCurrentFrameForPull(now = new Date()): Promise<Buffer> {
-    let metadata = this.store.getPublishedFrame();
-    let frame = await this.publisher.readCurrentFrame();
-    if (!frame || !this.isFrameFresh(metadata, now) || createHash("sha256").update(frame).digest("hex") !== metadata?.sha256) {
-      await this.publish(undefined, now);
-      metadata = this.store.getPublishedFrame();
-      frame = await this.publisher.readCurrentFrame();
-    }
-    if (!frame || !this.isFrameFresh(metadata, now) || createHash("sha256").update(frame).digest("hex") !== metadata?.sha256) throw new Error("No fresh display frame is available");
-    this.recordPull(now);
-    return frame;
+  async getPublishedPreview(): Promise<Buffer | null> {
+    const metadata = this.store.getPublishedFrame();
+    if (metadata?.delivery !== "tidbyt-cloud" || metadata.deviceId !== this.config.tidbytDeviceId || metadata.installationId !== this.config.installationId) return null;
+    const frame = await this.publisher.readCurrentFrame();
+    return frame && createHash("sha256").update(frame).digest("hex") === metadata.sha256 ? frame : null;
   }
-  async getPublishedPreview(): Promise<Buffer | null> { return this.publisher.readCurrentFrame(); }
-  recordPull(now = new Date()): void { this.store.setLastPull(now.toISOString()); }
 
   async skip(panelId?: string, now = new Date()): Promise<SchedulerDecision> {
     const id = panelId ?? this.store.getPublishedFrame()?.panel.id;

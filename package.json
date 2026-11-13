@@ -1,9 +1,9 @@
 {
   "name": "tidbytr",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
-  "description": "Local TypeScript display server for Tidbyt Gen 2 with a Home Assistant add-on package.",
+  "description": "Tidbyt stock-firmware API app with a local scheduler and Home Assistant add-on.",
   "packageManager": "pnpm@11.9.0+sha512.bd682d5d03fe525ef7c9fd6780c6884d1e756ac4c9c9fe00c538782824310dcf90e3ddc4f53835f06dfaebd5085e41855e0bcbb3b60de2ac5bbab89e5036f03b",
   "scripts": {
     "dev": "tsx watch src/server/index.ts",
@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "render:weather": "tsx scripts/render-weather-fixtures.ts",
     "render:fixtures": "tsx scripts/render-panel-fixtures.ts",
     "verify": "pnpm typecheck && pnpm test && pnpm build",
     "package:addon": "node scripts/package-addon.mjs",

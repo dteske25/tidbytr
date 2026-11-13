@@ -109,6 +109,7 @@ function parseForecast(forecast: NwsForecastResponse): WeatherSnapshot["forecast
     temperature: current.temperature,
     shortForecast: current.shortForecast,
     windSpeed: current.windSpeed,
+    isDaytime: current.isDaytime,
     high: nextDay?.temperature,
     low: nextNight?.temperature,
   };

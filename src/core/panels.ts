@@ -9,6 +9,7 @@ export interface WeatherSnapshot {
     temperature: number;
     shortForecast: string;
     windSpeed?: string;
+    isDaytime?: boolean;
     high?: number;
     low?: number;
   } | null;

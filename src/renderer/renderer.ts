@@ -1,7 +1,8 @@
 import sharp from "sharp";
 import type { FrameBundle, Panel, RuntimeConfig } from "../core/types.js";
 import type { SportsGame, WeatherAlert, WeatherSnapshot } from "../core/panels.js";
-import { COLORS, PixelCanvas } from "./canvas.js";
+import { weatherDisplay, WEATHER_FRAME_DELAY_MS } from "./weather.js";
+import { COLORS, PixelCanvas, type Rgba } from "./canvas.js";
 import { glyphWidth } from "./pixelFont.js";
 import type { DisplayRenderer } from "./types.js";
 
@@ -13,6 +14,7 @@ export class SharpRenderer implements DisplayRenderer {
 
 export async function renderPanel(panel: Panel, now = new Date()): Promise<FrameBundle> {
   const canvas = new PixelCanvas(COLORS.black);
+  let canvases = [canvas];
 
   switch (panel.kind) {
     case "clock":
@@ -21,9 +23,15 @@ export async function renderPanel(panel: Panel, now = new Date()): Promise<Frame
     case "nws-alert":
       renderAlert(canvas, panel.payload as unknown as WeatherAlert);
       break;
-    case "forecast":
-      renderForecast(canvas, panel.payload as unknown as NonNullable<WeatherSnapshot["forecast"]>);
+    case "forecast": {
+      const forecast = panel.payload as NonNullable<WeatherSnapshot["forecast"]>;
+      canvases = weatherDisplay(forecast).iconFrames.map((icon) => {
+        const page = new PixelCanvas(COLORS.black);
+        renderForecast(page, forecast, icon);
+        return page;
+      });
       break;
+    }
     case "upcoming-game":
     case "live-score":
     case "final-score":
@@ -33,14 +41,15 @@ export async function renderPanel(panel: Panel, now = new Date()): Promise<Frame
       renderFallback(canvas, panel.title);
   }
 
-  const webp = await sharp(canvas.raw(), {
+  const webp = await sharp(Buffer.concat(canvases.map((page) => page.raw())), {
     raw: {
       width: 64,
-      height: 32,
+      height: 32 * canvases.length,
+      pageHeight: 32,
       channels: 4,
     },
   })
-    .webp({ lossless: true, quality: 100 })
+    .webp({ lossless: true, quality: 100, loop: 0, delay: Array(canvases.length).fill(WEATHER_FRAME_DELAY_MS) })
     .toBuffer();
 
   return {
@@ -86,15 +95,20 @@ function renderAlert(canvas: PixelCanvas, alert: WeatherAlert): void {
   canvas.drawText(lines[2] ?? "", 3, 25, COLORS.muted, 1);
 }
 
-function renderForecast(canvas: PixelCanvas, forecast: NonNullable<WeatherSnapshot["forecast"]>): void {
-  const temp = `${forecast.temperature}F`;
-  canvas.drawText(temp, Math.max(31, 62 - canvas.measureText(temp, 2)), 4, COLORS.white, 2);
-  drawSun(canvas, 11, 9);
-  drawCloud(canvas, 12, 17);
-  if (forecast.high || forecast.low) {
-    canvas.drawText(`H${forecast.high ?? "-"} L${forecast.low ?? "-"}`, 34, 18, COLORS.muted, 1);
+function renderForecast(canvas: PixelCanvas, forecast: NonNullable<WeatherSnapshot["forecast"]>, icon: string[]): void {
+  const display = weatherDisplay(forecast);
+  for (const [y, row] of icon.entries()) {
+    for (const [x, pixel] of [...row].entries()) {
+      const hex = display.palette[pixel];
+      if (hex) canvas.setPixel(3 + x, 1 + y, hexColor(hex));
+    }
   }
-  canvas.drawText(fitText(forecast.shortForecast, 58), 4, 25, COLORS.blue, 1);
+  const digits = display.temp.slice(0, -1);
+  canvas.drawText(digits, 26, 3, COLORS.ink, 2);
+  canvas.drawText("F", 28 + canvas.measureText(digits, 2), 7, COLORS.ink);
+  canvas.drawText(display.summary, 3, 18, hexColor("#CBD5DF"));
+  canvas.drawText(display.high, 3, 25, hexColor("#FFD15C"));
+  canvas.drawText(display.low, 35, 25, hexColor("#65BFFF"));
 }
 
 function renderGame(canvas: PixelCanvas, game: SportsGame, kind: Panel["kind"]): void {
@@ -114,18 +128,8 @@ function renderFallback(canvas: PixelCanvas, title: string): void {
   canvas.drawText(trim(title, 14), 4, 13, COLORS.white, 1);
 }
 
-function drawSun(canvas: PixelCanvas, centerX: number, centerY: number): void {
-  canvas.fillRect(centerX - 3, centerY - 3, 7, 7, COLORS.yellow);
-  canvas.fillRect(centerX, centerY - 7, 1, 3, COLORS.yellow);
-  canvas.fillRect(centerX, centerY + 5, 1, 3, COLORS.yellow);
-  canvas.fillRect(centerX - 7, centerY, 3, 1, COLORS.yellow);
-  canvas.fillRect(centerX + 5, centerY, 3, 1, COLORS.yellow);
-}
-
-function drawCloud(canvas: PixelCanvas, x: number, y: number): void {
-  canvas.fillRect(x, y, 15, 5, COLORS.white);
-  canvas.fillRect(x + 4, y - 3, 9, 5, COLORS.white);
-  canvas.fillRect(x + 14, y + 1, 8, 4, COLORS.white);
+function hexColor(value: string): Rgba {
+  return [parseInt(value.slice(1, 3), 16), parseInt(value.slice(3, 5), 16), parseInt(value.slice(5, 7), 16), 255];
 }
 
 function trim(value: string, max: number): string {

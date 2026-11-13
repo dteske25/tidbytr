@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { FrameBundle, Panel, RuntimeConfig } from "../core/types.js";
+import { weatherDisplay, type ForecastDisplayInput } from "./weather.js";
 import { SharpRenderer } from "./renderer.js";
 import type { DisplayRenderer } from "./types.js";
 
@@ -117,13 +118,7 @@ function buildDisplayPayload(panel: Panel, now: Date, config: RuntimeConfig): Re
         date: formatClockDate(now, config.timezone),
       };
     case "forecast": {
-      const forecast = panel.payload as { temperature?: number; shortForecast?: string; windSpeed?: string; high?: number; low?: number };
-      return {
-        temp: typeof forecast.temperature === "number" ? `${forecast.temperature}F` : "--F",
-        highLow: `H${forecast.high ?? "-"} L${forecast.low ?? "-"}`,
-        wind: forecast.windSpeed ? `WIND ${forecast.windSpeed}` : "",
-        summary: forecast.shortForecast ?? "Forecast unavailable",
-      };
+      return weatherDisplay(panel.payload as ForecastDisplayInput);
     }
     case "nws-alert": {
       const alert = panel.payload as { severity?: string; event?: string; headline?: string };

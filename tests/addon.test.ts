@@ -21,15 +21,13 @@ describe("Home Assistant add-on package", () => {
 
     expect(config.ingress).toBe(true);
     expect(config.ingress_port).toBe(8787);
-    expect(config.ports["8788/tcp"]).toBe(8788);
+    expect(config.ports).not.toHaveProperty("8788/tcp");
     expect(config).toHaveProperty("version", packageJson.version);
-    for (const key of ["display_base_url", "timezone", "latitude", "longitude", "nws_contact"]) {
+    for (const key of ["tidbyt_api_token", "tidbyt_device_id", "installation_id", "timezone", "latitude", "longitude", "nws_contact"]) {
       expect(config.options).toHaveProperty(key);
       expect(config.schema).toHaveProperty(key);
     }
-    expect(config.options).not.toHaveProperty("tidbyt_api_token");
-    expect(config.options).not.toHaveProperty("tidbyt_device_id");
-    expect(config.options).not.toHaveProperty("installation_id");
+    expect(config.schema.tidbyt_api_token).toBe("password");
   });
 
   it("uses /data persistence and the built server entrypoint", () => {
@@ -41,8 +39,8 @@ describe("Home Assistant add-on package", () => {
     expect(dockerfile).toContain("COPY source.tar.gz /tmp/tidbytr.tar.gz");
     expect(dockerfile).not.toContain("codeload.github.com");
     expect(dockerfile).toContain("TIDBYTR_DATA_DIR=/data");
-    expect(dockerfile).toContain("TIDBYTR_DISPLAY_PORT=8788");
-    expect(dockerfile).toContain("EXPOSE 8787 8788");
+    expect(dockerfile).not.toContain("TIDBYTR_DISPLAY_PORT");
+    expect(dockerfile).toContain("EXPOSE 8787\n");
     expect(dockerfile).toContain("COPY run.sh /run.sh");
     expect(dockerfile).toContain("CMD [\"/run.sh\"]");
   });
@@ -69,21 +67,20 @@ describe("Home Assistant add-on package", () => {
 
   it("keeps runtime defaults when add-on options are absent", () => {
     const options = normalizeOptions({
-      displayBaseUrl: undefined,
+      tidbytApiToken: undefined,
       latitude: undefined,
       longitude: undefined,
       nwsContact: undefined,
     });
 
-    expect(options.displayBaseUrl).toBe("");
+    expect(options.tidbytApiToken).toBe("");
     expect(options.latitude).toBe(39.0997);
     expect(options.longitude).toBe(-94.5786);
     expect(options.nwsContact).toBe("tidbytr@example.local");
   });
 
-  it("normalizes the HDK display base URL", () => {
-    const options = normalizeOptions({ displayBaseUrl: " http://homeassistant.local:8788/// " });
-
-    expect(options.displayBaseUrl).toBe("http://homeassistant.local:8788");
+  it("validates installation IDs and migrates the legacy default", () => {
+    expect(normalizeOptions({ installationId: "tidbytr-main" }).installationId).toBe("tidbytrmain");
+    expect(() => normalizeOptions({ installationId: "bad-id" })).toThrow("alphanumeric");
   });
 });
