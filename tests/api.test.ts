@@ -86,12 +86,14 @@ describe("api", () => {
     await app.close();
   });
 
-  it("records scheduled render failures as not shown", async () => {
+  it("records scheduled render failures and publishes a degraded clock", async () => {
     const app = await makeApp({ schedulerIntervalSeconds: 15 }, new FailingRenderer("render timeout"));
 
     await waitFor(async () => {
       const status = await app.inject({ method: "GET", url: "/api/status" });
-      return status.json().decisions.some((decision: { result: string; reason: string }) => decision.result === "not-shown" && decision.reason === "render timeout");
+      const body = status.json();
+      return body.display.currentPanel?.kind === "clock" && body.display.degradedReason === "render timeout"
+        && body.decisions.some((decision: { result: string; reason: string }) => decision.result === "published" && decision.reason === "Degraded clock fallback: render timeout");
     });
 
     await app.close();
@@ -141,7 +143,8 @@ describe("api", () => {
 async function makeApp(configOverrides = {}, renderer: DisplayRenderer = new FakeRenderer()) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "tidbytr-api-test-"));
   const app = await buildApp({
-    startScheduler: "schedulerIntervalSeconds" in configOverrides,
+    // Seed provider data before starting the timer so initial refreshes cannot supersede the test render.
+    startScheduler: false,
     config: testConfig({ dataDir, ...configOverrides }),
     store: new TidbytrStore(":memory:"),
     weatherProvider: new FakeWeatherProvider({
@@ -156,6 +159,7 @@ async function makeApp(configOverrides = {}, renderer: DisplayRenderer = new Fak
     transport: new FakeCloudTransport(),
   });
   await app.runtime.refreshSources();
+  if ("schedulerIntervalSeconds" in configOverrides) app.runtime.startScheduler();
   return Object.assign(app, { dataDir });
 }
 
