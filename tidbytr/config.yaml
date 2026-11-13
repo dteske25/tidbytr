@@ -1,5 +1,5 @@
 name: Tidbytr
-version: 0.7.0
+version: 0.8.0
 slug: tidbytr
 description: Tidbyt stock-firmware app with priority weather, sports, and manual controls.
 url: https://github.com/dteske25/tidbytr
@@ -28,6 +28,9 @@ options:
   baby_birth_date: ""
   baby_name: ""
   starfield_enabled: true
+  schedule_mode: clock-cycle
+  clock_seconds: 60
+  screen_seconds: 20
   log_level: info
   scheduler_interval_seconds: 60
   refresh_interval_seconds: 600
@@ -46,6 +49,9 @@ schema:
   baby_birth_date: str?
   baby_name: str?
   starfield_enabled: bool
+  schedule_mode: list(clock-cycle|priority)
+  clock_seconds: int(20,3600)
+  screen_seconds: int(10,120)
   log_level: list(trace|debug|info|warn|error)
   scheduler_interval_seconds: int(15,3600)
   refresh_interval_seconds: int(60,21600)

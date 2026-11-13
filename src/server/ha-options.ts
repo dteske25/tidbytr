@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import os from "node:os";
+import { DEFAULT_SCREEN_POLICY } from "../core/policy.js";
 import { normalizeOptions } from "../core/config.js";
 
 const [inputPath = "/data/options.json", outputPath = "/data/config.json"] = process.argv.slice(2);
@@ -17,6 +18,7 @@ const options = normalizeOptions({
   babyBirthDate: raw.baby_birth_date,
   babyName: raw.baby_name,
   starfieldEnabled: raw.starfield_enabled,
+  screenPolicy: { ...DEFAULT_SCREEN_POLICY, mode: raw.schedule_mode, clockSeconds: raw.clock_seconds, screenSeconds: raw.screen_seconds },
   logLevel: raw.log_level,
   schedulerIntervalSeconds: raw.scheduler_interval_seconds,
   refreshIntervalSeconds: raw.refresh_interval_seconds,

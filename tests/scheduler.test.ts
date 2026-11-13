@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { Panel } from "../src/core/types.js";
-import { choosePanel, defaultSchedulerState, snoozeUntil } from "../src/core/scheduler.js";
+import { choosePanel as selectPanel, defaultSchedulerState, snoozeUntil } from "../src/core/scheduler.js";
+
+import { DEFAULT_SCREEN_POLICY } from "../src/core/policy.js";
+const choosePanel = (request: Parameters<typeof selectPanel>[0]) => selectPanel({ ...request, policy: { ...DEFAULT_SCREEN_POLICY, mode: "priority" } });
 
 const now = new Date("2026-06-28T12:00:00.000Z");
 
-describe("scheduler", () => {
+describe("priority scheduler", () => {
   it("uses clock as the baseline when no higher-priority panels exist", () => {
     const decision = choosePanel({ panels: [panel("clock", 0, "clock")], now, state: defaultSchedulerState() });
     expect(decision.selectedPanelId).toBe("clock");

@@ -9,3 +9,5 @@ For upgrades from HDK, back up the add-on, restore production firmware using [HD
 See the [installation guide](https://github.com/dteske25/tidbytr#readme) and [operations documentation](DOCS.md). API acceptance does not confirm physical display; outages can leave previous images on the device.
 
 Version 0.7 adds a 12-hour clock, configurable baby age, and animated Star flight. Use Personal screens in the dashboard, or initial HA options `baby_birth_date`, `baby_name`, and `starfield_enabled`. Baby age stays hidden until a valid birth date is configured.
+
+Version 0.8 defaults to clock-led rotation: Clock 60s → Weather 20s → Clock 60s → Baby age 20s → Clock 60s → Stars 20s. Adjust Rotation in the dashboard. For closest physical timing, keep only Tidbytr enabled in the device app rotation. Priority mode retains the earlier background scheduling behavior.

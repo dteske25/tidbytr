@@ -2,7 +2,7 @@
 
 Tidbytr runs a custom app on a **Tidbyt Gen 2 with stock firmware**, alongside Store apps. A local TypeScript server and Home Assistant add-on render clock, U.S. National Weather Service forecasts/alerts, and favorite-team sports scores, then push the selected screen through the Tidbyt API.
 
-The scheduler keeps priorities, minimum selection time, cooldowns, score-change detection, quiet hours, and manual controls. Regular updates use a stable installation ID and background delivery so Tidbytr participates in your app rotation. Show now and critical warnings/watches request immediate display. These rules govern Tidbytr's selection; they do not control Store-app scheduling or confirm physical display.
+By default, a 60-second clock separates 20-second weather, baby-age, and star-flight screens. Critical warnings/watches can interrupt. Quiet hours, snooze, and manual controls remain available. Priority scheduling is an alternative mode for event-driven weather/sports and background coexistence with Store apps. These rules govern Tidbytr's selections; device/cloud latency and other installed apps can affect physical display time.
 
 ## Install and configure
 
@@ -25,6 +25,9 @@ You need a Gen 2 configured in the Tidbyt mobile app, its device ID/API key, Int
    baby_birth_date: ""
    baby_name: ""
    starfield_enabled: true
+   schedule_mode: clock-cycle
+   clock_seconds: 60
+   screen_seconds: 20
    log_level: info
    scheduler_interval_seconds: 60
    refresh_interval_seconds: 600
@@ -41,7 +44,7 @@ API acceptance confirms a server response, not physical display. Outbound HTTPS 
 ## Upgrade from 0.5 / HDK
 
 1. Back up the existing add-on and note its settings. If you flashed HDK, restore production firmware using [HDK's Back to Normal instructions](https://github.com/tidbyt/hdk#back-to-normal) for Gen 2. If already on stock firmware, no firmware change is needed. This server does not flash the device.
-2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.7.0**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
+2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.8.0**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
 3. Enter `tidbyt_api_token` and `tidbyt_device_id`, keeping your location, timezone, teams, and quiet hours.
 4. Remove the obsolete `display_base_url` option and any retained port 8788 mapping. Save and restart. The old `/current.webp` firmware feed is no longer served.
 5. Open the dashboard, check API acceptance, then try Show now and observe the actual device and animated weather app.
@@ -64,6 +67,27 @@ The dashboard separates the last API-accepted screen from the selected preview a
 
 Internet/cloud outages prevent new images reaching the device; previously uploaded content may remain in rotation. Server freshness checks cannot remove an image from an offline device. Tidbytr is not a sole-source weather-warning system.
 
+## Clock-led rotation
+
+Open **Rotation** in the dashboard to choose a mode and adjust durations. The default cycle is:
+
+| Slot | Requested duration |
+| --- | --- |
+| Clock | 60 seconds |
+| Weather | 20 seconds |
+| Clock | 60 seconds |
+| Baby age | 20 seconds |
+| Clock | 60 seconds |
+| Star flight | 20 seconds |
+
+Then repeat. Clock occupies 75% of the default four-minute cycle. Disabled/unavailable screens are skipped; no eligible screens means clock continues. Each cycle item gets a turn regardless of the priority-mode cooldown settings. Ordinary sports/advisories are not inserted into this three-screen cycle; choose Priority scheduling to include them.
+
+Critical warnings/watches interrupt immediately. After an alert clears, a full clock interval precedes the next pending cycle item. Show now overrides with its selection hold; Skip returns to clock and advances to the following item; Snooze/quiet hours allow clock and critical alerts. Render failures publish a degraded clock and skip that item for this round after successful delivery. Failed uploads do not advance the cycle. Cursor state persists across restarts.
+
+Clock-led transitions request immediate display; repeated clock/data refreshes update the same installation in the background. For the closest match on the physical device, leave only Tidbytr enabled in the Tidbyt app rotation. Other Store apps can take screen time within a clock slot, and cloud/firmware delays can shift boundaries. Durations are server-requested timings, not physical-display guarantees.
+
+The HA baseline options are `schedule_mode` (`clock-cycle` or `priority`), `clock_seconds` (20–3600), and `screen_seconds` (10–120). Clock duration must exceed other-screen duration in clock-led mode. Use the dashboard after saving settings there. Upgrading from 0.7 inherits the new clock-led defaults while preserving old priority/cooldown values for Priority mode.
+
 ## Clock, baby age, and star flight
 
 The clock uses **12-hour time with AM/PM**, without a leading zero, in your configured timezone.
@@ -72,7 +96,7 @@ Open **Personal screens** in the dashboard to set a birth date and optional name
 
 The equivalent HA options are `baby_birth_date` (`YYYY-MM-DD`, empty disables), `baby_name` (optional), and `starfield_enabled` (default true). As with other ordinary settings, dashboard saves take ownership after a save; make later edits there. Personal data is entered in HA or the dashboard; repository samples use synthetic dates.
 
-Star flight is a smooth four-second animated loop of stars moving outward from a distant center, with subtle perspective streaks. Baby age and Star flight share the Personal & ambient source toggle. Both respect quiet hours and snooze; critical alerts retain precedence. Their priorities/cooldowns are editable in Screen priorities (defaults: baby 25 / 600 seconds, stars 10 / 300 seconds).
+Star flight is a smooth four-second animated loop of stars moving outward from a distant center, with subtle perspective streaks. Baby age and Star flight share the Personal & ambient source toggle. Both respect quiet hours and snooze; critical alerts retain precedence. In priority mode, their priorities/cooldowns are editable in Screen priorities (defaults: baby 25 / 600 seconds, stars 10 / 300 seconds). In clock-led mode, Rotation controls their slot durations.
 
 `pnpm render:local` creates clock, synthetic baby-age, and animated starfield previews for both renderer paths.
 

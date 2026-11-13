@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.0
+
+- Default to a clock-led cycle with longer clock slots between weather, baby age, and stars (60/20 seconds).
+- Add Rotation timing/mode controls and HA options; retain priority scheduling as an alternative.
+- Persist the cycle cursor, preserve slot starts through data refreshes, skip unavailable items, and resume through clock after interruptions.
+- Request foreground delivery at slot transitions, with background updates within a slot. Document physical timing limits and app-rotation setup.
+- Add boundary-aware timers, graceful rendering-failure handling, and scheduler/runtime regression timelines.
+
+
 ## 0.7.0
 
 - Change clock rendering to 12-hour time with AM/PM and no leading zero in both backends.

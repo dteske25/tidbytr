@@ -16,10 +16,13 @@ const kinds = ["clock", "baby-age", "starfield", "nws-alert", "forecast", "upcom
 const prioritiesSchema = z.object(Object.fromEntries(kinds.map((kind) => [kind, z.number().int().min(0).max(100).default(DEFAULT_SCREEN_POLICY.priorities[kind])])) as Record<typeof kinds[number], z.ZodDefault<z.ZodNumber>>);
 const cooldownSchema = z.object(Object.fromEntries(kinds.map((kind) => [kind, z.number().int().min(kind === "clock" ? 0 : 20).max(3600).default(DEFAULT_SCREEN_POLICY.cooldownSeconds[kind])])) as Record<typeof kinds[number], z.ZodDefault<z.ZodNumber>>);
 const screenPolicySchema = z.object({
+  mode: z.enum(["clock-cycle", "priority"]).default(DEFAULT_SCREEN_POLICY.mode),
+  clockSeconds: z.number().int().min(20).max(3600).default(DEFAULT_SCREEN_POLICY.clockSeconds),
+  screenSeconds: z.number().int().min(10).max(120).default(DEFAULT_SCREEN_POLICY.screenSeconds),
   minimumDwellSeconds: z.number().int().min(20).max(120).default(20),
   priorities: prioritiesSchema.default(DEFAULT_SCREEN_POLICY.priorities),
   cooldownSeconds: cooldownSchema.default(DEFAULT_SCREEN_POLICY.cooldownSeconds),
-}).default(DEFAULT_SCREEN_POLICY);
+}).refine((policy) => policy.mode !== "clock-cycle" || policy.clockSeconds > policy.screenSeconds, { message: "Clock duration must be longer than other screens", path: ["clockSeconds"] }).default(DEFAULT_SCREEN_POLICY);
 
 export const homeAssistantOptionsSchema = z.object({
   tidbytApiToken: z.string().trim().default(""),

@@ -120,6 +120,7 @@ export interface PublishedFrame {
 }
 
 export interface SchedulerState {
+  cycleNextIndex: number;
   snoozedUntil: string | null;
   skippedPanelIds: string[];
   disabledSources: SourceId[];
