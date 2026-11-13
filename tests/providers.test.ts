@@ -43,7 +43,7 @@ describe("providers", () => {
     const result = await provider.getSnapshot(new Date("2026-06-28T12:00:00.000Z"));
 
     expect(result.health.status).toBe("ok");
-    expect(result.snapshot.forecast?.temperature).toBe(72);
+    expect(result.snapshot.forecast).toMatchObject({ temperature: 72, isDaytime: true, high: 72, low: 52 });
     expect(result.snapshot.alerts[0]?.severity).toBe("warning");
   });
 

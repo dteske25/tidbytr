@@ -49,6 +49,7 @@ export async function buildApp(options: BuildAppOptions = {}) {
     weatherProvider: options.weatherProvider,
     sportsProvider: options.sportsProvider,
     publisher: options.publisher,
+    transport: options.transport,
     renderer: options.renderer,
     logger: app.log,
   });
@@ -147,28 +148,6 @@ export async function buildApp(options: BuildAppOptions = {}) {
       return reply.sendFile("index.html");
     });
   }
-
-  return app;
-}
-
-export async function buildDisplayApp(runtime: TidbytrRuntime) {
-  const app = Fastify({
-    logger: false,
-  });
-
-  app.get("/current.webp", async (_request, reply) => {
-    try {
-      const frame = await runtime.getCurrentFrameForPull();
-      return reply.header("Content-Type", "image/webp").header("Cache-Control", "no-store").send(frame);
-    } catch (error) {
-      return reply.code(503).header("Cache-Control", "no-store").send({
-        error: "Frame unavailable",
-        message: error instanceof Error ? error.message : "Unknown display error",
-      });
-    }
-  });
-
-  app.setNotFoundHandler((_request, reply) => reply.code(404).send({ error: "Not found" }));
 
   return app;
 }

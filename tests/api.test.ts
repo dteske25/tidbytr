@@ -4,9 +4,9 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DisplayRenderer } from "../src/renderer/types.js";
 import { LocalDisplayPublisher } from "../src/core/publisher.js";
-import { buildApp, buildDisplayApp } from "../src/server/app.js";
+import { buildApp } from "../src/server/app.js";
 import { TidbytrStore } from "../src/storage/store.js";
-import { FakeRenderer, FakeSportsProvider, FakeWeatherProvider, testConfig } from "./helpers/fakes.js";
+import { FakeCloudTransport, FakeRenderer, FakeSportsProvider, FakeWeatherProvider, testConfig } from "./helpers/fakes.js";
 
 describe("api", () => {
   it("returns status and panels", async () => {
@@ -77,7 +77,7 @@ describe("api", () => {
   });
 
   it("runs scheduled publishes in the background", async () => {
-    const app = await makeApp({ schedulerIntervalSeconds: 0.01 });
+    const app = await makeApp({ schedulerIntervalSeconds: 15 });
 
     await waitFor(() => fs.existsSync(path.join(app.dataDir, "display", "current.webp")));
 
@@ -86,32 +86,41 @@ describe("api", () => {
     await app.close();
   });
 
-  it("records scheduled render failures as not shown", async () => {
-    const app = await makeApp({ schedulerIntervalSeconds: 0.01 }, new FailingRenderer("render timeout"));
+  it("records scheduled render failures and publishes a degraded clock", async () => {
+    const app = await makeApp({ schedulerIntervalSeconds: 15 }, new FailingRenderer("render timeout"));
 
     await waitFor(async () => {
       const status = await app.inject({ method: "GET", url: "/api/status" });
-      return status.json().decisions.some((decision: { result: string; reason: string }) => decision.result === "not-shown" && decision.reason === "render timeout");
+      const body = status.json();
+      return body.display.currentPanel?.kind === "clock" && body.display.degradedReason === "render timeout"
+        && body.decisions.some((decision: { result: string; reason: string }) => decision.result === "published" && decision.reason === "Degraded clock fallback: render timeout");
     });
 
     await app.close();
   });
 
-  it("serves the current WebP on the display listener and records pulls", async () => {
+  it("serves a passive accepted-screen preview without claiming device connectivity", async () => {
     const app = await makeApp();
-    const displayApp = await buildDisplayApp(app.runtime);
-    const current = await displayApp.inject({ method: "GET", url: "/current.webp" });
-    const hiddenApi = await displayApp.inject({ method: "GET", url: "/api/status" });
+    await app.runtime.publish("clock");
+    const preview = await app.inject({ method: "GET", url: "/api/display/current.webp" });
     const status = await app.inject({ method: "GET", url: "/api/status" });
+    expect(preview.statusCode).toBe(200);
+    expect(status.json().display).toMatchObject({ delivery: "tidbyt-cloud", apiAccepted: true });
+    expect(status.json().display).not.toHaveProperty("online");
+    expect(status.json().display).not.toHaveProperty("lastPull");
+    await app.close();
+  });
 
-    expect(current.statusCode).toBe(200);
-    expect(current.headers["content-type"]).toContain("image/webp");
-    expect(current.headers["cache-control"]).toBe("no-store");
-    expect(current.rawPayload.length).toBeGreaterThan(20);
-    expect(hiddenApi.statusCode).toBe(404);
-    expect(status.json().display.lastPull).toBeTruthy();
-    expect(status.json().display.online).toBe(true);
-    await displayApp.close();
+  it("omits the API token and preserves it through config round trips", async () => {
+    const app = await makeApp();
+    const config = (await app.inject({ method: "GET", url: "/api/config" })).json();
+    expect(config).not.toHaveProperty("tidbytApiToken");
+    expect(config.apiTokenConfigured).toBe(true);
+    const saved = await app.inject({ method: "PUT", url: "/api/config", payload: { ...config, timezone: "UTC" } });
+    expect(saved.statusCode).toBe(200);
+    expect(app.runtime.getRuntimeConfig().tidbytApiToken).toBe("test-token");
+    expect(saved.body).not.toContain("test-token");
+    expect((await app.inject({ method: "GET", url: "/api/status" })).body).not.toContain("test-token");
     await app.close();
   });
 
@@ -134,7 +143,8 @@ describe("api", () => {
 async function makeApp(configOverrides = {}, renderer: DisplayRenderer = new FakeRenderer()) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "tidbytr-api-test-"));
   const app = await buildApp({
-    startScheduler: "schedulerIntervalSeconds" in configOverrides,
+    // Seed provider data before starting the timer so initial refreshes cannot supersede the test render.
+    startScheduler: false,
     config: testConfig({ dataDir, ...configOverrides }),
     store: new TidbytrStore(":memory:"),
     weatherProvider: new FakeWeatherProvider({
@@ -146,8 +156,10 @@ async function makeApp(configOverrides = {}, renderer: DisplayRenderer = new Fak
     }),
     publisher: new LocalDisplayPublisher({ dataDir }),
     renderer,
+    transport: new FakeCloudTransport(),
   });
   await app.runtime.refreshSources();
+  if ("schedulerIntervalSeconds" in configOverrides) app.runtime.startScheduler();
   return Object.assign(app, { dataDir });
 }
 

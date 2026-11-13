@@ -1,51 +1,58 @@
-# Tidbytr Add-On Docs
+# Tidbytr add-on operations
 
-## Required Options
+## Configuration
 
-- `timezone`: IANA timezone for schedule decisions.
-- `latitude` and `longitude`: home location for NWS forecast and alerts.
-- `nws_contact`: contact string used as the NWS User-Agent.
+Required: `tidbyt_api_token`, `tidbyt_device_id`, `timezone`, `latitude`, `longitude`, and `nws_contact`. Get the key and device ID from the device's settings in the Tidbyt mobile app. Do not put real credentials in Git or screenshots.
 
-## Optional Options
+Optional: `installation_id` (stable alphanumeric ID, default `tidbytrmain`), `favorite_teams`, `log_level`, `scheduler_interval_seconds`, `refresh_interval_seconds`, and both `quiet_hours_start`/`quiet_hours_end` (`HH:mm`). Empty team lists disable sports. The old default `tidbytr-main` normalizes to `tidbytrmain`.
 
-- `favorite_teams`: team abbreviations or display names to track through the sports provider.
-- `scheduler_interval_seconds`: decision cadence.
-- `refresh_interval_seconds`: provider refresh cadence.
-- `quiet_hours_start` and `quiet_hours_end`: `HH:mm` quiet window. Critical NWS alerts may interrupt.
-- `display_base_url`: LAN URL for the read-only display feed, usually `http://homeassistant.local:8788` or `http://<ha-ip>:8788`.
+For standalone development, corresponding environment variables are `TIDBYTR_API_TOKEN`, `TIDBYTR_DEVICE_ID`, `TIDBYTR_INSTALLATION_ID`, `TIDBYTR_TIMEZONE`, `TIDBYTR_LATITUDE`, `TIDBYTR_LONGITUDE`, `TIDBYTR_NWS_CONTACT`, and comma-separated `TIDBYTR_FAVORITE_TEAMS`. Dashboard defaults to port 8787 and data to `.tidbytr`; HA uses `/data`.
 
-## HDK Display Feed
+## Stock-firmware delivery
 
-Configure HDK to poll `${display_base_url}/current.webp`. The add-on exposes this read-only WebP feed on port `8788`; the Home Assistant Ingress URL is only for the dashboard and should not be used by firmware.
+Production firmware uses its normal cloud connection. Tidbytr sends base64 WebP to `https://api.tidbyt.com/v0/devices/{deviceId}/push` with bearer authorization and `installationID`. Ordinary scheduled updates use `background: true` to share rotation with Store apps. Manual requests, active manual holds, and critical alerts use `background: false` to request immediate display. These are Tidbyt API semantics also exposed by [Pixlet push](https://github.com/tidbyt/pixlet/blob/v0.34.0/cmd/push.go).
 
-## Dashboard
+No HDK listener or port 8788 remains. API acceptance is not device telemetry. Tidbytr cannot guarantee physical dwell time, interruption latency, or control over Store apps. Upgrading from HDK requires restoring production firmware; see the root README.
 
-The Ingress dashboard shows current panel preview, source health, scheduler history, last publish state, last firmware pull, Show now, skip, snooze, and source enable/disable controls.
+Each push attempt has a 4-second deadline, with up to three attempts and bounded backoff. Network failures, HTTP 429, and HTTP 5xx retry; other HTTP errors do not. Work is checked for supersession/expiry before attempts, and commits are serialized. Already accepted remote requests cannot be recalled. Failed delivery does not advance selection history or overwrite the last accepted local preview. Upstream response bodies and exception details are not exposed as push errors.
 
-## Persistence
+## Dashboard and API
 
-The add-on writes normalized runtime config to `/data/config.json`, the current WebP to `/data/display/current.webp`, and SQLite state to `/data/tidbytr.sqlite`.
+The dashboard shows last accepted content, latest push result, a separate selected preview, source health, decisions, and next selection. Status never claims device connectivity from an API response. Config/status omit the token and expose only `apiTokenConfigured`.
 
-## Priority screen rules (0.5)
+- `GET /api/status`, `/api/config`, `/api/panels`: passive cached reads.
+- `GET /api/display/current.webp`: passive last accepted local preview, checked against its hash and current device/app target. It never pushes or counts as a device poll.
+- `GET /api/panels/:id/preview.webp`: render a preview without uploading it.
+- `PUT /api/config`: validate and save settings. Omitted API tokens preserve their existing value. A successful save remains successful if the immediate push fails; inspect latest push status.
+- `POST /api/actions/push`: optional `panelId` and `holdSeconds` (20–3600, default 60). Requests immediate display with a selection hold.
+- `POST /api/actions/skip`: optional `panelId`, excluded until a replacement is successfully accepted.
+- `POST /api/actions/snooze`: `minutes` (1–1440, default 15), clears manual holds and selects clock/critical content.
+- `POST /api/actions/source`: `sourceId` and `enabled`. Clock cannot be disabled.
 
-The dashboard's Screen priorities form edits priorities (0–100), repeat cooldowns (20–3600 seconds), and minimum dwell time (20–120 seconds). Defaults hold screens for 20 seconds. Unchanged live games repeat after 60 seconds, advisories after 120, forecasts/upcoming games after 300, and finals after 600. Score/status changes may bypass cooldown after minimum dwell. Waiting ordinary candidates gain preference; clock fills gaps. Critical warnings/watches interrupt ordinary content and share time across concurrent alerts, including during quiet hours/snooze. Advisories respect quiet hours/snooze. The alert priority preserves the warning/watch/advisory offsets.
+## Priority and freshness
 
-Show now requests a one-minute hold; critical alerts retain precedence. Skip excludes a panel until one replacement is successfully published. Snooze clears manual holds and immediately selects clock/critical alerts. Clock cannot be disabled. The API accepts `holdSeconds` (20–3600) with `POST /api/actions/push`. `PUT /api/config` accepts `screenPolicy` containing `minimumDwellSeconds`, `priorities`, and `cooldownSeconds`; kind keys are `clock`, `nws-alert`, `forecast`, `upcoming-game`, `live-score`, and `final-score`.
+The Screen priorities form edits priority (0–100), cooldown (20–3600 seconds), and minimum selection time (20–120 seconds). Defaults: 20-second minimum, live games repeat after 60 seconds, advisories 120, forecast/upcoming games 300, finals 600. Score/status changes bypass cooldown after minimum dwell. Ordinary waiting candidates gain preference and clock fills gaps. Critical warnings/watches interrupt other Tidbytr content and rotate with concurrent critical alerts, including during snooze/quiet hours. Advisories respect snooze/quiet hours. Server selection history reflects API-accepted selections, not measured device exposure.
 
-## Refresh and freshness
+Alerts refresh at most every 60 seconds, forecasts at `refresh_interval_seconds`, sports every 30 seconds during live/imminent games or at `refresh_interval_seconds` otherwise. Providers refresh independently of publication. Disabled sources are not queried. Endpoint attempts have 4-second deadlines and one jittered retry; full source refreshes are bounded to 20 seconds.
 
-Dashboard reads use cached snapshots. Alerts refresh at most every 60 seconds, forecasts at `refresh_interval_seconds`, and sports every 30 seconds during live/imminent games or at `refresh_interval_seconds` otherwise. Disabled sources are not fetched. Each endpoint gets a 4-second attempt deadline and one jittered retry; a full provider refresh is bounded to 20 seconds. Display selection never waits for provider refreshes.
+Forecasts and retained alerts expire within 15 minutes of observation or sooner for expiring alerts. Live scores expire after 90 seconds without a successful observation. Upcoming games are limited to the next 24 hours, with 30-minute observation validity. Finals expire one hour after first observed completion, including restarts. Successful empty alerts clear cancellations. Retained alerts are last-known data, not confirmation they remain active.
 
-Forecasts and retained alerts expire within 15 minutes of successful observation, or sooner for expiring alerts. Live scores expire after 90 seconds without a successful observation. Upcoming screens are limited to games within 24 hours and expire after 30 minutes without refresh. Finals expire one hour after first observed completion, including across restarts. Successful empty alerts clear cancellations; retained warnings during an outage are last-known data, not confirmation they remain active.
+Scheduled pushes refresh clock imagery at minute changes. Automatic render failures use a fresh Sharp clock with a degraded reason; failed explicit Show requests return errors. WebP size (512 KiB), dimensions, and decoding are checked before upload. Weather icons animate on two-second loops within their 16x16 area; temperature and labels never move. Unknown conditions remain static.
 
-Firmware pulls check frame validity and content hashes, regenerate expired/mismatched frames, and refresh clock imagery at minute changes. Automatic render failure publishes a fresh Sharp clock with an observable degraded reason; a failed explicit Show request returns an error. `GET /api/display/current.webp` returns the last published bytes for dashboard monitoring without recording a firmware pull. Status distinguishes published content, the next candidate/reason, freshness, and source observation timestamps. Polling is not proof of physical decoding/display.
+An uploaded image has no server-enforced device expiry. Cloud/Internet outages or a stopped add-on can leave old images in the rotation. Do not use Tidbytr as the only weather-warning channel.
 
 ## Configuration ownership
 
-HA options initialize the baseline. Once a dashboard/API save is made, complete options saved in SQLite override that baseline on restart. Make subsequent edits through the dashboard/API; intentionally resetting the saved `options` record restores the HA baseline. Dashboard saves do not rewrite the entrypoint's `config.json`. Quiet hours always come from active configuration. Legacy permanent skip lists are cleared during migration.
+HA options initialize the baseline; saved dashboard/API options in SQLite override ordinary baseline settings after restart. Missing new fields inherit the baseline. Nonempty HA/environment API credentials and device IDs take precedence at startup so key rotation and migration are not hidden by saved options. Subsequent ordinary setting edits should use the dashboard/API. Intentionally resetting the saved `options` record restores ordinary HA baseline ownership.
 
-## Building and device validation
+Dashboard saves do not rewrite the entrypoint's `config.json`. Quiet hours always come from active configuration. Legacy permanent skip lists clear on migration. Old local frames and pull records do not count as cloud acceptance.
 
-Run `pnpm package:addon` after editing application sources, scripts, lockfiles, or package metadata and include `tidbytr/source.tar.gz` in the release. Packaging requires GNU tar. The deterministic bundle supports HA's add-on-only build context without downloading mutable main or requiring release tags. `pnpm verify:release` requires Pixlet 0.34.0, runs typecheck/tests/build, and rejects stale bundles. CI builds amd64 and arm64 images.
+HA persists `/data/config.json`, `/data/tidbytr.sqlite`, and `/data/display/current.webp`. Credential-bearing config and database files have owner-only permissions. API tokens are stored locally to support restarts; keep backups private.
 
-Physical Gen 2 testing remains necessary for AP reconnection, Internet loss, HA restart, animation interruption, and actual latency. This server does not flash or modify HDK firmware.
+## Release process
+
+Run `pnpm package:addon` after changes to application source, scripts, lockfiles, or package metadata, then commit `tidbytr/source.tar.gz` with the source. GNU tar creates a deterministic source archive for HA's add-on-only Docker context; the build does not download mutable main.
+
+`pnpm verify:release` requires Pixlet v0.34.0, runs typecheck, tests, production builds, and archive freshness verification. CI also builds amd64 and arm64 images. Update both package/add-on versions to make HA offer an update. HA users refresh the Add-on Store, update/rebuild, configure credentials, and restart.
+
+Physical stock Gen 2 validation remains necessary for rotation coexistence, Show now, alerts, animated playback, Internet recovery, and actual latency. The server does not flash device firmware.

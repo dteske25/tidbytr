@@ -1,6 +1,6 @@
 # Tidbytr V1 Spec
 
-Historical V1 contract. See [current operational documentation](../tidbytr/DOCS.md) for 0.5 priority scheduling, passive reads, bounded refresh, expiring controls, fresh frames, and configuration ownership.
+Historical V1 contract, superseded by [stock-firmware API delivery](../tidbytr/DOCS.md) in 0.6. The HDK description below applies to 0.4–0.5 only. See [current operational documentation](../tidbytr/DOCS.md) for 0.5 priority scheduling, passive reads, bounded refresh, expiring controls, fresh frames, and configuration ownership.
 
 Tidbytr is a local TypeScript display server for a stock Tidbyt Gen 2 running HDK firmware. It renders custom 64x32 WebP panels, selects the next panel with a priority scheduler, and publishes the selected image at a local WebP URL for the device to poll. V1 deployment includes a Home Assistant OS/Supervised app/add-on package with Ingress and persistent runtime data under `/data`.
 

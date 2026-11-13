@@ -6,7 +6,9 @@ const [inputPath = "/data/options.json", outputPath = "/data/config.json"] = pro
 
 const raw = fs.existsSync(inputPath) ? (JSON.parse(fs.readFileSync(inputPath, "utf8")) as Record<string, unknown>) : {};
 const options = normalizeOptions({
-  displayBaseUrl: raw.display_base_url,
+  tidbytApiToken: raw.tidbyt_api_token,
+  tidbytDeviceId: raw.tidbyt_device_id,
+  installationId: raw.installation_id,
   timezone: raw.timezone,
   latitude: raw.latitude,
   longitude: raw.longitude,
@@ -21,4 +23,5 @@ const options = normalizeOptions({
       : null,
 });
 
-fs.writeFileSync(outputPath, `${JSON.stringify(options, null, 2)}${os.EOL}`);
+fs.writeFileSync(outputPath, `${JSON.stringify(options, null, 2)}${os.EOL}`, { mode: 0o600 });
+fs.chmodSync(outputPath, 0o600);

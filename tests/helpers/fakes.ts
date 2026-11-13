@@ -1,3 +1,4 @@
+import type { DisplayTransport, DisplayPushOptions } from "../../src/core/transport.js";
 import type { FrameBundle, RuntimeConfig, SourceHealth } from "../../src/core/types.js";
 import type { Panel } from "../../src/core/types.js";
 import type { SportsSnapshot, WeatherSnapshot } from "../../src/core/panels.js";
@@ -9,13 +10,11 @@ import { defaultOptions } from "../../src/core/config.js";
 export function testConfig(overrides: Partial<RuntimeConfig> = {}): RuntimeConfig {
   return {
     ...defaultOptions(),
-    displayBaseUrl: "http://homeassistant.local:8788",
+    tidbytApiToken: "test-token",
+    tidbytDeviceId: "test-device",
     dataDir: "/tmp/tidbytr-test",
     host: "127.0.0.1",
     port: 0,
-    displayHost: "127.0.0.1",
-    displayPort: 0,
-    displayPollingWindowSeconds: 30,
     ...overrides,
   };
 }
@@ -58,5 +57,15 @@ export class FakeRenderer implements DisplayRenderer {
       webp: this.webp ?? (await new SharpRenderer().render(panel, now, _config ?? testConfig())).webp,
       renderedAt: now.toISOString(),
     };
+  }
+}
+
+export class FakeCloudTransport implements DisplayTransport {
+  calls: Array<{ frame: FrameBundle; options: DisplayPushOptions }> = [];
+  async push(frame: FrameBundle, options: DisplayPushOptions) {
+    this.calls.push({ frame, options });
+    return { ok: true, status: 200, message: "Accepted by Tidbyt API", attemptCount: 1,
+      publishedAt: new Date().toISOString(), renderedAt: frame.renderedAt, panelId: frame.panelId,
+      delivery: "tidbyt-cloud" as const, deviceId: options.deviceId, installationId: options.installationId };
   }
 }

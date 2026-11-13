@@ -25,7 +25,7 @@ export class LocalDisplayPublisher {
   }
 }
 export async function validateDisplayFrame(frame: FrameBundle): Promise<void> {
-  if (frame.webp.length > 512 * 1024) throw new Error("Frame exceeds HDK's 512 KiB limit");
+  if (frame.webp.length > 512 * 1024) throw new Error("Frame exceeds the 512 KiB limit");
   const metadata = await sharp(frame.webp, { animated: false }).metadata();
   if (metadata.format !== "webp" || metadata.width !== 64 || (metadata.pageHeight ?? metadata.height) !== 32) throw new Error("Frame must be a 64x32 WebP");
   await sharp(frame.webp, { animated: false }).raw().toBuffer();

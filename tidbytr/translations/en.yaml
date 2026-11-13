@@ -1,7 +1,13 @@
 configuration:
-  display_base_url:
-    name: HDK Display Base URL
-    description: LAN URL for the read-only WebP feed, such as http://homeassistant.local:8788.
+  tidbyt_api_token:
+    name: Tidbyt API Token
+    description: API key from the device settings in the Tidbyt mobile app.
+  tidbyt_device_id:
+    name: Tidbyt Device ID
+    description: Device ID from the same device settings.
+  installation_id:
+    name: Installation ID
+    description: Stable alphanumeric ID for Tidbytr in your app rotation. Keep it unchanged.
   timezone:
     name: Timezone
     description: IANA timezone used by the scheduler.
@@ -16,4 +22,3 @@ configuration:
     description: Contact string used as the NWS User-Agent.
 network:
   8787/tcp: Tidbytr dashboard (not required when using Ingress)
-  8788/tcp: Read-only HDK WebP feed for Tidbyt firmware polling

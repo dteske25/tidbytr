@@ -5,6 +5,8 @@ import { z } from "zod";
 import { DEFAULT_SCREEN_POLICY } from "./policy.js";
 import type { HomeAssistantOptions, RuntimeConfig, SanitizedConfig } from "./types.js";
 
+export const DEFAULT_INSTALLATION_ID = "tidbytrmain";
+
 const timeStringSchema = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Expected HH:mm in 24-hour time");
@@ -19,7 +21,9 @@ const screenPolicySchema = z.object({
 }).default(DEFAULT_SCREEN_POLICY);
 
 export const homeAssistantOptionsSchema = z.object({
-  displayBaseUrl: z.string().default(""),
+  tidbytApiToken: z.string().trim().default(""),
+  tidbytDeviceId: z.string().trim().default(""),
+  installationId: z.string().trim().regex(/^[A-Za-z0-9]+$/, "Tidbyt installation ID must be alphanumeric").default(DEFAULT_INSTALLATION_ID),
   screenPolicy: screenPolicySchema,
   timezone: z.string().refine((value) => {
     try { new Intl.DateTimeFormat("en-US", { timeZone: value }); return true; } catch { return false; }
@@ -44,14 +48,13 @@ export const runtimeConfigSchema = homeAssistantOptionsSchema.extend({
   dataDir: z.string().min(1),
   host: z.string().min(1).default("0.0.0.0"),
   port: z.coerce.number().int().min(1).max(65535).default(8787),
-  displayHost: z.string().min(1).default("0.0.0.0"),
-  displayPort: z.coerce.number().int().min(1).max(65535).default(8788),
-  displayPollingWindowSeconds: z.coerce.number().int().min(1).max(3600).default(30),
 });
 
 export function defaultOptions(): HomeAssistantOptions {
   return {
-    displayBaseUrl: "",
+    tidbytApiToken: "",
+    tidbytDeviceId: "",
+    installationId: DEFAULT_INSTALLATION_ID,
     screenPolicy: structuredClone(DEFAULT_SCREEN_POLICY),
     timezone: process.env.TZ || "America/Chicago",
     latitude: 39.0997,
@@ -75,7 +78,7 @@ export function normalizeOptions(input: unknown): HomeAssistantOptions {
     ...defaults,
     ...compactCandidate,
     favoriteTeams: normalizeFavoriteTeams((compactCandidate as Partial<HomeAssistantOptions>).favoriteTeams),
-    displayBaseUrl: normalizeDisplayBaseUrl((compactCandidate as Partial<HomeAssistantOptions>).displayBaseUrl),
+    installationId: compactCandidate.installationId === "tidbytr-main" ? DEFAULT_INSTALLATION_ID : compactCandidate.installationId ?? DEFAULT_INSTALLATION_ID,
   };
 
   return homeAssistantOptionsSchema.parse(normalized);
@@ -87,7 +90,9 @@ export function loadRuntimeConfig(): RuntimeConfig {
   const fileOptions = readJsonFile(configPath);
 
   const envOptions: Partial<HomeAssistantOptions> = {
-    displayBaseUrl: process.env.TIDBYTR_DISPLAY_BASE_URL,
+    tidbytApiToken: process.env.TIDBYTR_API_TOKEN,
+    tidbytDeviceId: process.env.TIDBYTR_DEVICE_ID,
+    installationId: process.env.TIDBYTR_INSTALLATION_ID,
     timezone: process.env.TZ || process.env.TIDBYTR_TIMEZONE,
     latitude: process.env.TIDBYTR_LATITUDE ? Number(process.env.TIDBYTR_LATITUDE) : undefined,
     longitude: process.env.TIDBYTR_LONGITUDE ? Number(process.env.TIDBYTR_LONGITUDE) : undefined,
@@ -104,14 +109,12 @@ export function loadRuntimeConfig(): RuntimeConfig {
     dataDir,
     host: process.env.TIDBYTR_HOST || "0.0.0.0",
     port: process.env.TIDBYTR_PORT || 8787,
-    displayHost: process.env.TIDBYTR_DISPLAY_HOST || "0.0.0.0",
-    displayPort: process.env.TIDBYTR_DISPLAY_PORT || 8788,
-    displayPollingWindowSeconds: process.env.TIDBYTR_DISPLAY_POLLING_WINDOW_SECONDS || 30,
   });
 }
 
 export function sanitizeConfig(config: RuntimeConfig): SanitizedConfig {
-  return config;
+  const { tidbytApiToken, ...safe } = config;
+  return { ...safe, apiTokenConfigured: Boolean(tidbytApiToken) };
 }
 
 export function ensureDataDir(dataDir: string): void {
@@ -126,7 +129,8 @@ export function writeRuntimeOptions(dataDir: string, options: HomeAssistantOptio
   ensureDataDir(dataDir);
   const destination = configFilePath(dataDir);
   const temporary = `${destination}.tmp`;
-  fs.writeFileSync(temporary, `${JSON.stringify(options, null, 2)}${os.EOL}`);
+  fs.writeFileSync(temporary, `${JSON.stringify(options, null, 2)}${os.EOL}`, { mode: 0o600 });
+  fs.chmodSync(temporary, 0o600);
   fs.renameSync(temporary, destination);
 }
 
@@ -151,12 +155,4 @@ function normalizeFavoriteTeams(value: unknown): string[] {
   }
 
   return [];
-}
-
-function normalizeDisplayBaseUrl(value: unknown): string {
-  if (typeof value !== "string") {
-    return "";
-  }
-
-  return value.trim().replace(/\/+$/, "");
 }

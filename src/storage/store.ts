@@ -28,6 +28,7 @@ export class TidbytrStore {
     }
 
     this.db = new DatabaseSync(dbPath);
+    if (dbPath !== ":memory:") fs.chmodSync(dbPath, 0o600);
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS kv (
         key TEXT PRIMARY KEY,
@@ -48,7 +49,12 @@ export class TidbytrStore {
   }
 
   getOptions(fallback: HomeAssistantOptions): HomeAssistantOptions {
-    return this.getJson<HomeAssistantOptions>("options") ?? fallback;
+    // Existing HDK saves inherit new fields; baseline credentials allow HA key rotation.
+    const saved = this.getJson<Partial<HomeAssistantOptions>>("options");
+    return { ...fallback, ...saved,
+      tidbytApiToken: fallback.tidbytApiToken || saved?.tidbytApiToken || "",
+      tidbytDeviceId: fallback.tidbytDeviceId || saved?.tidbytDeviceId || "",
+    };
   }
 
   setOptions(options: HomeAssistantOptions): void {
@@ -73,19 +79,12 @@ export class TidbytrStore {
   setSnapshot<T>(source: string, snapshot: T): void { this.setJson(`snapshot_${source}`, snapshot); }
 
   getLastPublish(): PublishResult | null {
-    return this.getJson<PublishResult>("last_publish") ?? this.getJson<PublishResult>("last_push");
+    const result = this.getJson<PublishResult>("last_publish");
+    return result?.delivery === "tidbyt-cloud" ? result : null;
   }
 
   setLastPublish(result: PublishResult): void {
     this.setJson("last_publish", result);
-  }
-
-  getLastPull(): string | null {
-    return this.getJson<string>("last_pull");
-  }
-
-  setLastPull(pulledAt: string): void {
-    this.setJson("last_pull", pulledAt);
   }
 
   getSourceHealth(): SourceHealth[] {

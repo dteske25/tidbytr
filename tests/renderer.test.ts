@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 import { clockPanel } from "../src/core/panels.js";
 import type { Panel, RuntimeConfig } from "../src/core/types.js";
 import { PixletRenderer, type PixletProcessRunner } from "../src/renderer/pixlet.js";
-import { renderPanel } from "../src/renderer/renderer.js";
+import { renderPanel, SharpRenderer } from "../src/renderer/renderer.js";
+import { validateDisplayFrame } from "../src/core/publisher.js";
 import { testConfig } from "./helpers/fakes.js";
 
 describe("renderer", () => {
@@ -177,26 +178,71 @@ describe.runIf(hasPixlet())("pixlet integration", () => {
     expect(litPixels(image, { x: 0, y: 30, width: 64, height: 2 })).toBeGreaterThan(40);
   });
 
-  it("keeps forecast icon, temperature, metadata, and summary regions distinct", async () => {
-    const renderer = new PixletRenderer();
-    const frame = await renderer.render(
-      panel("forecast", {
-        temperature: 102,
-        shortForecast: "Thunderstorms Likely And Breezy",
-        windSpeed: "18 mph",
-        high: 104,
-        low: 78,
-      }),
-      new Date("2026-06-28T12:00:00.000Z"),
-      testConfig(),
-    );
-    const image = await firstFramePixels(frame.webp);
+  it("keeps weather readable for long text, zero, negative, three-digit, and missing values", async () => {
+    for (const renderer of [new PixletRenderer(), new SharpRenderer()]) {
+      for (const payload of [
+        { temperature: 102, high: 104, low: 78, shortForecast: "Thunderstorms Likely And Breezy", windSpeed: "18 to 35 mph" },
+        { temperature: 0, high: 0, low: -12, shortForecast: "Snow" },
+        { temperature: -12, high: -2, low: -24, shortForecast: "Partly Cloudy", isDaytime: false },
+        { temperature: -999, high: -999, low: -999, shortForecast: "Mostly Cloudy" }, {},
+      ]) {
+        const frame = await renderer.render(panel("forecast", payload), new Date("2026-06-28T12:00:00Z"), testConfig());
+        const image = await firstFramePixels(frame.webp);
+        expect(image.width).toBe(64);
+        expect(image.height).toBe(32);
+        expect(litPixels(image, { x: 3, y: 1, width: 16, height: 16 })).toBeGreaterThan(5);
+        expect(litPixels(image, { x: 26, y: 1, width: 36, height: 15 })).toBeGreaterThan(20);
+        expect(litPixels(image, { x: 3, y: 18, width: 58, height: 5 })).toBeGreaterThan(15);
+        expect(litPixels(image, { x: 3, y: 25, width: 28, height: 6 })).toBeGreaterThan(10);
+        expect(litPixels(image, { x: 35, y: 25, width: 28, height: 6 })).toBeGreaterThan(10);
+        for (const y of [0, 17, 23, 24, 31]) expect(litPixels(image, { x: 0, y, width: 64, height: 1 })).toBe(0);
+        expect(litPixels(image, { x: 19, y: 1, width: 7, height: 16 })).toBe(0);
+        expect(litPixels(image, { x: 63, y: 0, width: 1, height: 32 })).toBe(0);
+      }
+    }
+  });
 
-    expect(litPixels(image, { x: 2, y: 3, width: 27, height: 17 })).toBeGreaterThan(40);
-    expect(litPixels(image, { x: 30, y: 2, width: 34, height: 14 })).toBeGreaterThan(55);
-    expect(litPixels(image, { x: 30, y: 16, width: 34, height: 8 })).toBeGreaterThan(25);
-    expect(litPixels(image, { x: 2, y: 24, width: 60, height: 8 })).toBeGreaterThan(20);
-    expect(litPixels(image, { x: 28, y: 3, width: 2, height: 17 })).toBeLessThan(8);
+  it("animates all known weather icons for two seconds with stationary text and no motion outside the icon", async () => {
+    for (const renderer of [new PixletRenderer(), new SharpRenderer()]) {
+      for (const [shortForecast, isDaytime] of [
+        ["Sunny", true], ["Clear", false], ["Partly Cloudy", true], ["Mostly Clear", false],
+        ["Cloudy", true], ["Rain", true], ["Snow", true], ["Thunderstorms", true],
+        ["Fog", true], ["Windy", true], ["Freezing Rain", true], ["Rain And Snow", true], ["Unavailable", true],
+      ] as const) {
+        const frame = await renderer.render(panel("forecast", { temperature: 72, high: 80, low: 52, shortForecast, isDaytime }), new Date("2026-06-28T12:00:00Z"), testConfig());
+        await validateDisplayFrame(frame);
+        const metadata = await sharp(frame.webp, { animated: true }).metadata();
+        const pages = metadata.pages ?? 1;
+        if (shortForecast === "Unavailable") { expect(pages).toBe(1); continue; }
+        expect(pages).toBeGreaterThan(1);
+        expect(metadata.pageHeight).toBe(32);
+        expect(metadata.loop).toBe(0);
+        expect(metadata.delay?.reduce((sum, delay) => sum + delay, 0)).toBe(2000);
+        expect(frame.webp.length).toBeLessThan(512 * 1024);
+        const raw = await sharp(frame.webp, { animated: true }).ensureAlpha().raw().toBuffer();
+        const motion = new Set<string>();
+        const stationary = new Set<string>();
+        for (let page = 0; page < pages; page++) {
+          const pixels = raw.subarray(page * 64 * 32 * 4, (page + 1) * 64 * 32 * 4);
+          motion.add(hash(pixels));
+          const masked = Buffer.from(pixels);
+          for (let y = 1; y < 17; y++) masked.fill(0, (y * 64 + 3) * 4, (y * 64 + 19) * 4);
+          stationary.add(hash(masked));
+        }
+        expect(motion.size).toBeGreaterThan(1);
+        expect(stationary.size).toBe(1);
+      }
+    }
+  });
+
+  it("uses different actual artwork for sunny, rain, snow, and clear nights", async () => {
+    const renderer = new PixletRenderer();
+    const icons = [];
+    for (const payload of [{ shortForecast: "Sunny" }, { shortForecast: "Rain" }, { shortForecast: "Snow" }, { shortForecast: "Clear", isDaytime: false }]) {
+      const frame = await renderer.render(panel("forecast", { temperature: 72, ...payload }), new Date("2026-06-28T12:00:00Z"), testConfig());
+      icons.push(hash(await sharp(frame.webp).extract({ left: 3, top: 1, width: 16, height: 16 }).raw().toBuffer()));
+    }
+    expect(new Set(icons).size).toBe(4);
   });
 
   it("keeps NWS alert chrome, severity, marquee, and detail text visible", async () => {

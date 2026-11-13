@@ -1,5 +1,7 @@
 # Version 0.5 implementation
 
+Historical HDK release notes. Version 0.6 restores stock-firmware API delivery; see [current operations](../../tidbytr/DOCS.md).
+
 This delivers the software milestone from the [review](project-review-2026-10-16.md), without claiming measured superiority over Store apps.
 
 - Independent, cached provider jobs have deadlines, bounded retries, in-flight sharing, observation timestamps, and adaptive refresh intervals. Forecasts/alerts and sports leagues fail independently.

@@ -64,11 +64,16 @@ export interface PublishResult {
   publishedAt: string;
   renderedAt: string;
   panelId: string;
-  framePath: string;
+  framePath?: string;
+  delivery?: "tidbyt-cloud";
+  deviceId?: string;
+  installationId?: string;
 }
 
 export interface HomeAssistantOptions {
-  displayBaseUrl: string;
+  tidbytApiToken: string;
+  tidbytDeviceId: string;
+  installationId: string;
   timezone: string;
   latitude: number;
   longitude: number;
@@ -90,9 +95,6 @@ export interface RuntimeConfig extends HomeAssistantOptions {
   dataDir: string;
   host: string;
   port: number;
-  displayHost: string;
-  displayPort: number;
-  displayPollingWindowSeconds: number;
 }
 
 export interface DisplayHistory {
@@ -102,6 +104,9 @@ export interface DisplayHistory {
 }
 
 export interface PublishedFrame {
+  delivery?: "tidbyt-cloud";
+  deviceId?: string;
+  installationId?: string;
   panel: Panel;
   renderedAt: string;
   validUntil: string;
@@ -130,14 +135,13 @@ export interface SchedulerRequest {
 
 export interface TidbytrStatus {
   display: {
-    delivery: "hdk-local-pull";
+    delivery: "tidbyt-cloud";
     width: 64;
     height: 32;
-    remoteUrl: string | null;
+    configured: boolean;
     currentFrame: { panelId: string; renderedAt: string } | null;
-    online: boolean;
+    apiAccepted: boolean;
     lastPublish: PublishResult | null;
-    lastPull: string | null;
     currentPanel: Panel | null;
     fresh: boolean;
     degradedReason: string | null;
@@ -156,4 +160,4 @@ export interface TidbytrStatus {
   };
 }
 
-export type SanitizedConfig = RuntimeConfig;
+export type SanitizedConfig = Omit<RuntimeConfig, "tidbytApiToken"> & { apiTokenConfigured: boolean };

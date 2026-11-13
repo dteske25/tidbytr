@@ -88,7 +88,7 @@ export function App() {
       <aside className="sidebar">
         <div>
           <div className="brand">Tidbytr</div>
-          <div className="version">v0.5.0</div>
+          <div className="version">v0.6.0</div>
         </div>
 
         <nav aria-label="Main navigation">
@@ -115,15 +115,13 @@ export function App() {
         <header className="topbar">
           <div className="run-state">
             <span className="live-dot" />
-            <strong>{status?.display.online ? "Tidbyt is polling" : "Waiting for Tidbyt pull"}</strong>
+            <strong>{!status?.display.configured ? "Configure Tidbyt API delivery" : status.display.apiAccepted ? "Tidbyt API accepted the last update" : "Waiting for a successful API push"}</strong>
           </div>
           <div className="topbar-metrics">
-            <span>Display</span>
-            <b className={status?.display.online ? "chip online" : "chip offline"}>{status?.display.online ? "Polling" : "No recent pull"}</b>
+            <span>Cloud delivery</span>
+            <b className={status?.display.apiAccepted ? "chip online" : "chip offline"}>{status?.display.apiAccepted ? "Accepted" : "Pending / failed"}</b>
             <span>Last publish</span>
             <b>{formatLastPublish(status)}</b>
-            <span>Last pull</span>
-            <b>{status?.display.lastPull ? formatTime(status.display.lastPull) : "Never"}</b>
             <span>Next decision</span>
             <b>{status ? `in ${status.scheduler.nextDecisionInSeconds}s` : "--"}</b>
           </div>
@@ -134,8 +132,8 @@ export function App() {
             <section className="current-panel">
               <div className="section-heading">
                 <div>
-                  <h1>Published screen</h1>
-                  <p>{publishedPanel?.title ?? "No published screen"} · {status?.display.fresh ? "Fresh" : "Stale / waiting"}</p>
+                  <h1>Last accepted screen</h1>
+                  <p>{publishedPanel?.title ?? "No accepted screen"} · {status?.display.fresh ? "Fresh" : "Stale / waiting"}</p>
                   <p>Next: {status?.scheduler.nextPanel?.title ?? "None"} · {status?.scheduler.nextReason}</p>
                   {status?.display.degradedReason ? <p role="alert">Display fallback: {status.display.degradedReason}</p> : null}
                   <p>{publishedPanel ? `Source: ${sourceLabel(publishedPanel.source)}` : "Source: none"}</p>
@@ -205,10 +203,10 @@ export function App() {
             <section className="rail-section">
               <h2>Actions</h2>
               {actionError ? <p className="config-warning" role="alert">{actionError}</p> : null}
-              {status?.scheduler.manualHold ? <p>Manual hold until {formatTime(status.scheduler.manualHold.until)}; critical alerts may interrupt.</p> : null}
+              {status?.scheduler.manualHold ? <p>Selection held until {formatTime(status.scheduler.manualHold.until)}; critical alerts may interrupt Tidbytr.</p> : null}
               <button className="primary-action" onClick={() => void act("actions/push", { panelId: currentPanel?.id })}>
                 <Play size={16} />
-                Show for 1 minute
+                Show now
               </button>
               <div className="action-pair">
                 <button className="outline-action skip" onClick={() => void act("actions/skip", { panelId: currentPanel?.id })}>
@@ -260,12 +258,11 @@ export function App() {
             </section> : null}
 
             <section className="rail-section">
-              <h2>HDK pull URL</h2>
-              <div className="url-box">{status?.display.remoteUrl ?? "Set display_base_url"}</div>
-              {status?.config.displayBaseUrl && isIngressUrl(status.config.displayBaseUrl) ? (
-                <p className="config-warning">Use the LAN display port, not a Home Assistant Ingress URL.</p>
-              ) : null}
-              {!status?.config.displayBaseUrl ? <p className="config-warning">Set display_base_url to the add-on LAN address.</p> : null}
+              <h2>Tidbyt API delivery</h2>
+              <div className="url-box">Device: {status?.config.tidbytDeviceId || "Not configured"}</div>
+              <p>App ID: {status?.config.installationId ?? "tidbytrmain"}</p>
+              {!status?.display.configured ? <p className="config-warning">Set tidbyt_api_token and tidbyt_device_id in the add-on configuration.</p> : null}
+              <p>Scheduled updates share rotation with Store apps. Show now and critical alerts request immediate display. API acceptance does not confirm the physical display.</p>
             </section>
 
             <section className="rail-section">
@@ -385,8 +382,4 @@ function formatLastPublish(status: TidbytrStatus | null) {
 
 function isIngress() {
   return window.location.pathname.includes("/api/hassio_ingress/");
-}
-
-function isIngressUrl(value: string) {
-  return value.includes("/api/hassio_ingress/") || value.includes("/hassio_ingress/");
 }

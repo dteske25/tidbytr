@@ -8,9 +8,10 @@ import { LocalDisplayPublisher } from "../src/core/publisher.js";
 import { choosePanel, defaultSchedulerState, recordShown } from "../src/core/scheduler.js";
 import { NwsProvider } from "../src/providers/nws.js";
 import { EspnSportsProvider } from "../src/providers/sports.js";
+import { TidbytCloudTransport } from "../src/core/transport.js";
 import { TidbytrRuntime } from "../src/server/runtime.js";
 import { TidbytrStore } from "../src/storage/store.js";
-import { FakeRenderer, FakeSportsProvider, FakeWeatherProvider, testConfig } from "./helpers/fakes.js";
+import { FakeCloudTransport, FakeRenderer, FakeSportsProvider, FakeWeatherProvider, testConfig } from "./helpers/fakes.js";
 
 const now = new Date("2026-10-16T12:00:00Z");
 const after = (seconds: number) => new Date(now.getTime() + seconds * 1000);
@@ -22,7 +23,7 @@ function makeRuntime(options: Partial<ConstructorParameters<typeof TidbytrRuntim
   const runtime = new TidbytrRuntime({
     config: testConfig({ dataDir }), store: new TidbytrStore(":memory:"),
     weatherProvider: new FakeWeatherProvider(weather), sportsProvider: new FakeSportsProvider({ games: [] }),
-    renderer: new FakeRenderer(), ...options,
+    renderer: new FakeRenderer(), transport: new FakeCloudTransport(), ...options,
   });
   active.push({ runtime, dataDir });
   return runtime;
@@ -40,7 +41,7 @@ describe("reliable display lifecycle", () => {
     const refresh = runtime.refreshSources(now);
     const result = await runtime.publish(undefined, now);
     expect(result.panel?.id).toBe("clock");
-    expect((await runtime.getCurrentFrameForPull(now)).length).toBeGreaterThan(20);
+    expect((await runtime.getPublishedPreview())!.length).toBeGreaterThan(20);
     await refresh;
     expect((await runtime.getStatus(now)).sourceHealth.find((health) => health.id === "nws")?.detail).toContain("timed out");
   });
@@ -57,7 +58,7 @@ describe("reliable display lifecycle", () => {
     expect(status.display.currentPanel?.id).toBe("clock");
     expect(status.display.currentFrame?.panelId).toBe("clock");
     await runtime.getPublishedPreview();
-    expect((await runtime.getStatus(now)).display.lastPull).toBeNull();
+    expect((await runtime.getStatus(now)).display.apiAccepted).toBe(true);
   });
 
   it("prevents an old render from replacing a new critical frame", async () => {
@@ -102,13 +103,13 @@ describe("reliable display lifecycle", () => {
     expect((await runtime.getStatus(now)).scheduler.manualHold?.panelId).toBe("clock");
   });
 
-  it("expires live data and renews a frozen clock on the next pull", async () => {
+  it("expires live data and updates clock imagery on scheduled pushes", async () => {
     const runtime = makeRuntime({ weatherProvider: new FakeWeatherProvider({ forecast: null, alerts: [] }), sportsProvider: new FakeSportsProvider({ games: [{ id: "game", team: "KC", opponent: "DEN", status: "live", startsAt: now.toISOString() }] }) });
     await runtime.refreshSources(now);
     await runtime.publish(undefined, now);
-    await runtime.getCurrentFrameForPull(after(91));
+    await runtime.publish(undefined, after(91));
     expect((await runtime.getStatus(after(91))).display.currentPanel?.kind).toBe("clock");
-    await runtime.getCurrentFrameForPull(after(24 * 3600));
+    await runtime.publish(undefined, after(24 * 3600));
     const status = await runtime.getStatus(after(24 * 3600));
     expect(status.display.fresh).toBe(true);
     expect(status.display.currentFrame?.renderedAt).toBe(after(24 * 3600).toISOString());
@@ -127,7 +128,7 @@ describe("reliable display lifecycle", () => {
     expect((await runtime.getStatus(after(30))).scheduler.manualHold).toBeNull();
   });
 
-  it("does not query disabled providers and rejects frames whose persisted hash mismatches", async () => {
+  it("does not query disabled providers and repairs the local preview on publication", async () => {
     let calls = 0;
     const runtime = makeRuntime({ weatherProvider: { async getSnapshot(time = now) { calls++; return new FakeWeatherProvider(weather).getSnapshot(time); } } });
     await runtime.refreshSources(now);
@@ -137,14 +138,16 @@ describe("reliable display lifecycle", () => {
     expect(calls).toBe(1);
     expect((await runtime.getStatus(now)).display.currentPanel?.id).toBe("clock");
     fs.writeFileSync(path.join(runtime.getRuntimeConfig().dataDir, "display", "current.webp"), "mismatched file");
-    expect((await runtime.getCurrentFrameForPull(after(1))).subarray(8, 12).toString()).toBe("WEBP");
+    expect(await runtime.getPublishedPreview()).toBeNull();
+    await runtime.publish(undefined, after(1));
+    expect((await runtime.getPublishedPreview())!.subarray(8, 12).toString()).toBe("WEBP");
     expect((await runtime.getStatus(after(1))).display.fresh).toBe(true);
   });
 
   it("falls back for invalid renderer bytes without serving a corrupt frame", async () => {
     const runtime = makeRuntime({ renderer: new FakeRenderer(Buffer.from("invalid renderer output")) });
     await runtime.publish(undefined, now);
-    expect((await runtime.getCurrentFrameForPull(now)).subarray(8, 12).toString()).toBe("WEBP");
+    expect((await runtime.getPublishedPreview())!.subarray(8, 12).toString()).toBe("WEBP");
     expect((await runtime.getStatus(now)).display.degradedReason).toBeTruthy();
   });
 
@@ -155,7 +158,7 @@ describe("reliable display lifecycle", () => {
     const status = await runtime.getStatus(now);
     expect(status.display.currentPanel?.id).toBe("clock");
     expect(status.display.degradedReason).toBe("pixlet down");
-    expect((await runtime.getCurrentFrameForPull(now)).length).toBeGreaterThan(20);
+    expect((await runtime.getPublishedPreview())!.length).toBeGreaterThan(20);
   });
 
   it("expires manual holds and lets critical alerts interrupt them", async () => {
@@ -174,6 +177,69 @@ describe("reliable display lifecycle", () => {
     await runtime.refreshSources(current);
     await runtime.updateConfig({ screenPolicy: { ...DEFAULT_SCREEN_POLICY, minimumDwellSeconds: 30 } });
     expect((await runtime.getStatus()).display.currentPanel?.id).toBe("nws-tornado");
+  });
+
+  it("uses background rotation updates and foreground requests for manual shows and critical alerts", async () => {
+    const transport = new FakeCloudTransport();
+    const snapshot = { ...weather, alerts: [] as typeof warning[] };
+    const runtime = makeRuntime({ transport, weatherProvider: new FakeWeatherProvider(snapshot) });
+    await runtime.refreshSources(now);
+    await runtime.publish(undefined, now);
+    await runtime.publish("clock", after(20));
+    snapshot.alerts = [warning];
+    await runtime.refreshSources(after(21));
+    await runtime.publish(undefined, after(21));
+    expect(transport.calls.map((call) => call.options.background)).toEqual([true, false, false]);
+    expect(transport.calls[2]?.frame.panelId).toBe("nws-tornado");
+  });
+
+  it("preserves selection history, preview, and previous manual hold on cloud failure", async () => {
+    const transport = new FakeCloudTransport();
+    const store = new TidbytrStore(":memory:");
+    const runtime = makeRuntime({ transport, store });
+    await runtime.refreshSources(now);
+    await runtime.publish("clock", now);
+    const preview = await runtime.getPublishedPreview();
+    const history = store.getSchedulerState(null).history;
+    transport.push = async (frame, options) => ({ ok: false, status: 401, message: "Tidbyt API returned HTTP 401", attemptCount: 1,
+      publishedAt: now.toISOString(), renderedAt: frame.renderedAt, panelId: frame.panelId,
+      delivery: "tidbyt-cloud", deviceId: options.deviceId, installationId: options.installationId });
+    await expect(runtime.publish("forecast", after(20))).rejects.toThrow("HTTP 401");
+    expect(await runtime.getPublishedPreview()).toEqual(preview);
+    expect(store.getSchedulerState(null).history).toEqual(history);
+    const status = await runtime.getStatus(after(20));
+    expect(status.display.apiAccepted).toBe(false);
+    expect(status.display.currentPanel?.id).toBe("clock");
+    expect(status.display.lastPublish?.ok).toBe(false);
+    expect(status.scheduler.manualHold?.panelId).toBe("clock");
+  });
+
+  it("saves settings without credentials and reports delivery failure without advancing history", async () => {
+    const store = new TidbytrStore(":memory:");
+    const runtime = makeRuntime({ config: testConfig({ tidbytApiToken: "", tidbytDeviceId: "" }), store, transport: new TidbytCloudTransport() });
+    expect(await runtime.updateConfig({ timezone: "UTC" })).toMatchObject({ timezone: "UTC", apiTokenConfigured: false });
+    const status = await runtime.getStatus();
+    expect(status.display).toMatchObject({ configured: false, apiAccepted: false, currentFrame: null });
+    expect(status.display.lastPublish).toMatchObject({ ok: false, attemptCount: 0 });
+    expect(store.getSchedulerState(null).history).toEqual({});
+    await expect(runtime.publish("clock")).rejects.toThrow("Configure tidbyt_api_token");
+  });
+
+  it("migrates HDK settings and frames without hiding baseline credentials or key rotation", async () => {
+    const store = new TidbytrStore(":memory:");
+    const { tidbytApiToken, tidbytDeviceId, installationId, ...legacy } = testConfig();
+    store.setOptions(legacy as never);
+    const oldPanel = buildPanels(testConfig(), weather, { games: [] }, now)[0]!;
+    store.setPublishedFrame({ panel: oldPanel, renderedAt: now.toISOString(), validUntil: after(60).toISOString(), sha256: "legacy" });
+    const runtime = makeRuntime({ config: testConfig({ tidbytApiToken: "new-secret" }), store });
+    await new LocalDisplayPublisher({ dataDir: runtime.getRuntimeConfig().dataDir }).publish(await new FakeRenderer().render(oldPanel, now));
+    expect(runtime.getRuntimeConfig().tidbytApiToken).toBe("new-secret");
+    expect(runtime.getRuntimeConfig().installationId).toBe("tidbytrmain");
+    expect(runtime.getEditableConfig()).not.toHaveProperty("tidbytApiToken");
+    expect((await runtime.getStatus(now)).display.currentFrame).toBeNull();
+    expect(await runtime.getPublishedPreview()).toBeNull();
+    store.setOptions({ ...testConfig(), tidbytApiToken: "old-secret" });
+    expect(store.getOptions(testConfig({ tidbytApiToken: "rotated-secret" })).tidbytApiToken).toBe("rotated-secret");
   });
 
   it("restores dashboard overrides and applies quiet-hours edits after saved controls", async () => {
