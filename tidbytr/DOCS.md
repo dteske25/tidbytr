@@ -41,7 +41,7 @@ Starfield is generated on the native pixel grid, with 50 frames at 80 ms (four s
 
 ## Clock-led scheduling
 
-`screenPolicy.mode` defaults to `clock-cycle`, with `clockSeconds: 60` and `screenSeconds: 20`. Order: clock → forecast → clock → baby-age → clock → starfield, then repeat. Clock must be longer than other slots. Only eligible, nonexpired, enabled cycle items are selected. Missing screens are skipped; clock continues when none are available. Ordinary sports/advisories are excluded from the cycle. Critical alerts retain their interrupt/rotation handling. After they clear, a fresh full clock slot precedes the pending next item.
+`screenPolicy.mode` defaults to `clock-cycle`, with `clockSeconds: 30` and `screenSeconds: 15`. Order: clock → forecast → clock → baby-age → clock → starfield, then repeat. Clock must be longer than other slots. Only eligible, nonexpired, enabled cycle items are selected. Missing screens are skipped; clock continues when none are available. Ordinary sports/advisories are excluded from the cycle. Critical alerts retain their interrupt/rotation handling. After they clear, a fresh full clock slot precedes the pending next item.
 
 A persisted `cycleNextIndex` advances only after successful content publication. Background refreshes and changed data keep the existing slot start. Renderer failure plus successful clock fallback advances past the failed item and starts a fresh clock gap. Upload failure leaves the cursor unchanged. Manual holds override ordinary slots; Skip consumes the item and returns through clock; Snooze/quiet hours permit only clock/critical content. Mode changes start a new clock-led sequence and clear manual holds.
 

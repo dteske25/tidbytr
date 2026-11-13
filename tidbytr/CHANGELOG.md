@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.1
+
+- Set default rotation to 30 seconds of clock between each 15-second weather, baby-age, and star-flight screen. Existing saved durations remain editable in Rotation.
+
 ## 0.8.0
 
 - Default to a clock-led cycle with longer clock slots between weather, baby age, and stars (60/20 seconds).
