@@ -13,7 +13,8 @@ import { FakeCloudTransport, FakeRenderer, FakeSportsProvider, FakeWeatherProvid
 
 const now = new Date("2026-06-28T12:00:00Z");
 const after = (seconds: number) => new Date(now.getTime() + seconds * 1000);
-const policy = structuredClone(DEFAULT_SCREEN_POLICY);
+// Keep explicit custom timings to exercise support for saved rotations.
+const policy = { ...structuredClone(DEFAULT_SCREEN_POLICY), clockSeconds: 60, screenSeconds: 20 };
 const config = () => testConfig({ timezone: "UTC", screenPolicy: policy, starfieldEnabled: true, babyBirthDate: "2026-03-18" });
 const panels = (seconds = 0, critical = false) => buildPanels(config(), {
   forecast: { temperature: 72, shortForecast: "Sunny" }, forecastObservedAt: now.toISOString(), alertsObservedAt: after(seconds).toISOString(),
@@ -27,8 +28,18 @@ const commit = (state: SchedulerState, seconds: number, choices = panels(seconds
 
 describe("clock-led cycle", () => {
   it("is the default and repeats clock/weather/clock/age/clock/stars with longer clock slots", () => {
-    expect(normalizeOptions({}).screenPolicy).toMatchObject({ mode: "clock-cycle", clockSeconds: 60, screenSeconds: 20 });
+    expect(normalizeOptions({}).screenPolicy).toMatchObject({ mode: "clock-cycle", clockSeconds: 30, screenSeconds: 15 });
     let state = defaultSchedulerState();
+    const defaults = normalizeOptions({}).screenPolicy;
+    const defaultTransitions: Array<[number, string]> = [];
+    for (let seconds = 0; seconds <= 270; seconds += 5) {
+      const choices = panels(seconds);
+      const id = choosePanel({ panels: choices, state, now: after(seconds), policy: defaults }).selectedPanelId;
+      if (id !== state.showing?.panelId) defaultTransitions.push([seconds, id!]);
+      state = recordShown(state, choices.find((panel) => panel.id === id)!, after(seconds), defaults);
+    }
+    expect(defaultTransitions).toEqual([[0,"clock"],[30,"forecast"],[45,"clock"],[75,"baby-age"],[90,"clock"],[120,"starfield"],[135,"clock"],[165,"forecast"],[180,"clock"],[210,"baby-age"],[225,"clock"],[255,"starfield"],[270,"clock"]]);
+    state = defaultSchedulerState();
     const transitions: Array<[number, string]> = [];
     for (let seconds = 0; seconds <= 480; seconds += 5) {
       const panel = select(state, seconds);
@@ -112,7 +123,7 @@ describe("clock-led cycle", () => {
     expect(choosePanel(request(115)).selectedPanelId).toBe("clock");
   });
   it("validates durations and migrates old policy objects into the new default mode", () => {
-    expect(normalizeOptions({ screenPolicy: { minimumDwellSeconds: 40 } }).screenPolicy).toMatchObject({ mode: "clock-cycle", clockSeconds: 60, screenSeconds: 20, minimumDwellSeconds: 40 });
+    expect(normalizeOptions({ screenPolicy: { minimumDwellSeconds: 40 } }).screenPolicy).toMatchObject({ mode: "clock-cycle", clockSeconds: 30, screenSeconds: 15, minimumDwellSeconds: 40 });
     expect(() => normalizeOptions({ screenPolicy: { clockSeconds: 20, screenSeconds: 30 } })).toThrow("longer");
     expect(normalizeOptions({ screenPolicy: { mode: "priority", clockSeconds: 20, screenSeconds: 30 } }).screenPolicy.mode).toBe("priority");
   });
