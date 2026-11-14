@@ -1,5 +1,5 @@
 import { COLLEGE_TEAMS } from "../core/college-teams.js";
-import type { SportsGame, SportsSnapshot, SportsTeamArtwork } from "../core/panels.js";
+import type { SportsGame, SportsSnapshot, SportsTeamArtwork, SportsTeamStanding } from "../core/panels.js";
 import type { SourceHealth } from "../core/types.js";
 import { requestJson } from "./http.js";
 
@@ -17,10 +17,16 @@ interface EspnStatus {
   type?: { state?: string; completed?: boolean; name?: string; shortDetail?: string };
 }
 
+interface EspnRecord { type?: string; summary?: string; displayValue?: string }
+
 interface EspnCompetitor {
   id?: string;
   homeAway?: "home" | "away";
   score?: string | { value?: number; displayValue?: string };
+  records?: EspnRecord[];
+  record?: EspnRecord[];
+  rank?: number;
+  curatedRank?: { current?: number };
   linescores?: Array<{ value?: number; displayValue?: string }>;
   team?: {
     id?: string;
@@ -144,7 +150,9 @@ export class EspnSportsProvider {
       return untilStart <= 86400_000 && (game.status === "live" || untilStart >= -lookback) ? [game] : [];
     });
     return Promise.all(relevant.map(async (game) => {
-      if (game.status !== "live") return game;
+      const needsPregameDetails = game.status === "scheduled" &&
+        (!game.teamStanding?.record || !game.opponentStanding?.record);
+      if (game.status !== "live" && !needsPregameDetails) return game;
       const endpoint = `${team.league}/summary?event=${encodeURIComponent(game.id)}`;
       let summary = summaries.get(endpoint);
       if (!summary) {
@@ -153,7 +161,16 @@ export class EspnSportsProvider {
       }
       try {
         const { header } = await summary;
-        const live = header && parseGame({ ...header, id: game.id, date: game.startsAt }, matches, team.league);
+        const details = header && parseGame({ ...header, id: game.id, date: game.startsAt }, matches, team.league);
+        if (needsPregameDetails) {
+          if (!details) return game;
+          return {
+            ...game,
+            teamStanding: { ...game.teamStanding, ...details.teamStanding },
+            opponentStanding: { ...game.opponentStanding, ...details.opponentStanding },
+          };
+        }
+        const live = details;
         if (!live || live.status === "scheduled") throw new Error("Game summary has no current scores");
         return {
           ...live,
@@ -162,6 +179,7 @@ export class EspnSportsProvider {
           opponentArtwork: { ...game.opponentArtwork, ...live.opponentArtwork },
         };
       } catch (error) {
+        if (needsPregameDetails) return game;
         errors.push(`${team.key}: ${error instanceof Error ? error.message : String(error)}`);
         return previous.find((old) => old.id === game.id && old.status === "live") ?? game;
       }
@@ -197,6 +215,8 @@ function parseGame(event: EspnEvent, matches: (competitor: EspnCompetitor) => bo
     team, opponent: opponent.team?.abbreviation ?? opponent.team?.displayName ?? "OPP", startsAt,
     teamArtwork: teamArtwork(favorite.team),
     opponentArtwork: teamArtwork(opponent.team),
+    teamStanding: teamStanding(favorite),
+    opponentStanding: teamStanding(opponent),
     timeTbd: event.timeValid === false || competition?.timeValid === false || type?.shortDetail === "TBD",
     home: favorite.homeAway === "home" ? true : favorite.homeAway === "away" ? false : undefined,
     status: type?.completed ? "final" : inProgress ? "live" : "scheduled",
@@ -205,6 +225,16 @@ function parseGame(event: EspnEvent, matches: (competitor: EspnCompetitor) => bo
     teamSetPoints: set ? parseScore(favorite.linescores?.[set - 1]) : undefined,
     opponentSetPoints: set ? parseScore(opponent.linescores?.[set - 1]) : undefined,
   };
+}
+
+function teamStanding(competitor: EspnCompetitor): SportsTeamStanding | undefined {
+  const overall = (competitor.records ?? competitor.record)?.find(({ type }) => type === "total");
+  const record = overall?.summary ?? overall?.displayValue;
+  const rank = competitor.curatedRank?.current ?? competitor.rank;
+  const standing: SportsTeamStanding = {};
+  if (record && /^\d{1,3}-\d{1,3}(?:-\d{1,3})?$/.test(record)) standing.record = record;
+  if (typeof rank === "number" && Number.isInteger(rank) && rank >= 1 && rank <= 25) standing.rank = rank;
+  return standing.record || standing.rank ? standing : undefined;
 }
 
 function teamArtwork(team: EspnCompetitor["team"]): SportsTeamArtwork | undefined {

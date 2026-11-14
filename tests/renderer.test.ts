@@ -147,6 +147,34 @@ describe("pixlet renderer", () => {
     });
   });
 
+  it("fits the sport, next-day time, overall records, and ranks on the upcoming screen", async () => {
+    const now = new Date("2026-11-14T18:00:00Z");
+    const game = {
+      id: "match", team: "NEB", opponent: "IOWA", startsAt: "2026-11-15T12:30:00Z", home: true,
+      status: "scheduled" as const, league: "volleyball/womens-college-volleyball",
+      teamStanding: { record: "26-0", rank: 1 }, opponentStanding: { record: "13-16" },
+    };
+    expect(sportsDisplay(game, "upcoming-game", now, "UTC")).toMatchObject({
+      sport: "VB", status: "NOV15 12:30P",
+      rows: [{ name: "IOWA", standing: { record: "13-16" } }, { name: "NEB", standing: { record: "26-0", rank: 1 } }],
+    });
+    const { webp } = await renderPanel(panel("upcoming-game", game), now);
+    const { data, info } = await sharp(webp).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const yellowPixels = (x: number, y: number, width: number) => {
+      let count = 0;
+      for (let row = y; row < y + 5; row++) {
+        for (let col = x; col < x + width; col++) {
+          if (data[(row * info.width + col) * 4] === 250) count++;
+        }
+      }
+      return count;
+    };
+    expect(yellowPixels(3, 26, 7)).toBeGreaterThan(10);
+    expect(yellowPixels(57, 26, 4)).toBeGreaterThan(5);
+    expect(yellowPixels(49, 12, 12)).toBeGreaterThan(10);
+    expect(yellowPixels(49, 0, 12)).toBe(0);
+  });
+
   it("draws right-aligned three-digit scores and keeps the rows and footer distinct", async () => {
     const input = panel("live-score", {
       team: "NEB", opponent: "ISU", home: true, teamScore: 103, opponentScore: 98, period: "1:42 - 2ND",

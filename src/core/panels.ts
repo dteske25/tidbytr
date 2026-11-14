@@ -34,6 +34,11 @@ export interface SportsTeamArtwork {
   color?: string;
 }
 
+export interface SportsTeamStanding {
+  record?: string;
+  rank?: number;
+}
+
 export interface SportsGame {
   id: string;
   team: string;
@@ -42,6 +47,8 @@ export interface SportsGame {
   status: "scheduled" | "live" | "final";
   teamArtwork?: SportsTeamArtwork;
   opponentArtwork?: SportsTeamArtwork;
+  teamStanding?: SportsTeamStanding;
+  opponentStanding?: SportsTeamStanding;
   timeTbd?: boolean;
   home?: boolean;
   teamScore?: number;
@@ -190,5 +197,7 @@ export function panelVersion(panel: Panel): string {
 
 function sportsVersion(game: SportsGame) {
   const { id, team, opponent, startsAt, timeTbd, home, status, teamScore, opponentScore, set, teamSetPoints, opponentSetPoints, scoreChangedAt } = game;
-  return { id, team, opponent, startsAt, timeTbd, home, status, teamScore, opponentScore, set, teamSetPoints, opponentSetPoints, scoreChangedAt };
+  return { id, team, opponent, startsAt, timeTbd, home, status, teamScore, opponentScore, set, teamSetPoints, opponentSetPoints, scoreChangedAt,
+    ...(status === "scheduled" ? { teamStanding: game.teamStanding, opponentStanding: game.opponentStanding } : {}),
+  };
 }
