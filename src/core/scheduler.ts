@@ -4,7 +4,21 @@ import type { PanelKind, Panel, SchedulerDecision, SchedulerRequest, SchedulerSt
 
 import { DEFAULT_SCREEN_POLICY } from "./policy.js";
 
-export const CLOCK_CYCLE_KINDS: readonly PanelKind[] = ["forecast", "baby-age", "starfield"];
+// Keep existing slot indices stable for persisted rotation cursors.
+const CLOCK_CYCLE_SLOTS: ReadonlyArray<readonly PanelKind[]> = [
+  ["forecast"], ["baby-age"], ["starfield"], ["upcoming-game", "final-score"],
+];
+
+export function clockCycleSlotIndex(kind: PanelKind): number {
+  return CLOCK_CYCLE_SLOTS.findIndex((slot) => slot.includes(kind));
+}
+
+export function advanceClockCycle(state: SchedulerState, slotIndex: number): SchedulerState {
+  return { ...state, cycleNextIndex: (slotIndex + 1) % CLOCK_CYCLE_SLOTS.length };
+}
+
+export const SCORE_CHANGE_INTERRUPT = "Score change interrupt";
+export const LIVE_GAME_DISPLAY = "Live game display";
 
 export function defaultSchedulerState(quietHours = null as SchedulerState["quietHours"]): SchedulerState {
   return {
@@ -48,6 +62,24 @@ export function choosePanel(request: SchedulerRequest): SchedulerDecision {
   const manual = request.panels.find((panel) => panel.id === manualId && !isExpired(panel, now) && !request.state.disabledSources.includes(panel.source));
   if (manual) return decision(now, manual, "Manual show requested", "selected", skipped);
   if (request.manualPanelId) skipped.push({ panelId: request.manualPanelId, reason: "Manual panel unavailable" });
+  const live = eligible.filter((panel) => panel.kind === "live-score");
+  const scoreUpdate = (live.length ? live : eligible)
+    .filter((panel) => {
+      const changedAt = Date.parse(panel.scoreChangedAt ?? "");
+      return changedAt <= now.getTime() && now.getTime() - changedAt < 90_000 &&
+        history[panel.id]?.scoreChangedAt !== panel.scoreChangedAt;
+    })
+    .toSorted((a, b) => Date.parse(a.scoreChangedAt!) - Date.parse(b.scoreChangedAt!) || b.priority - a.priority)[0];
+  if (scoreUpdate) {
+    return decision(now, scoreUpdate, SCORE_CHANGE_INTERRUPT, "selected", skipped);
+  }
+  if (live.length) {
+    const interval = policy.mode === "clock-cycle" ? policy.screenSeconds : policy.minimumDwellSeconds;
+    const startedAt = Date.parse(request.state.showing?.startedAt ?? "");
+    const keepCurrent = current?.kind === "live-score" && request.state.showing?.kind === "live-score" && now.getTime() - startedAt < interval * 1000;
+    const selected = keepCurrent ? current : leastRecentlyShown(live, history)[0]!;
+    return decision(now, selected, LIVE_GAME_DISPLAY, "selected", skipped);
+  }
   if (policy.mode === "clock-cycle") return chooseClockCycle(request, eligible, skipped, policy);
   if (dwellActive && current) return decision(now, current, "Minimum display time", "selected", skipped);
   const ready = eligible.filter((panel) => {
@@ -73,26 +105,21 @@ function chooseClockCycle(request: SchedulerRequest, eligible: Panel[], skipped:
   const current = eligible.find((panel) => panel.id === state.showing?.panelId);
   const elapsed = state.showing ? Math.max(0, now.getTime() - Date.parse(state.showing.startedAt)) : Infinity;
   for (const panel of eligible) {
-    if (panel.kind !== "clock" && !CLOCK_CYCLE_KINDS.includes(panel.kind)) skipped.push({ panelId: panel.id, reason: "Not part of clock-led cycle" });
+    if (panel.kind !== "clock" && clockCycleSlotIndex(panel.kind) < 0) skipped.push({ panelId: panel.id, reason: "Not part of clock-led cycle" });
   }
   const selected = (panel: Panel, reason: string) => decision(now, panel, reason, "selected", skipped);
   if (current?.kind === "clock" && elapsed < policy.clockSeconds * 1000) return selected(current, "Clock interval");
-  if (current && CLOCK_CYCLE_KINDS.includes(current.kind)) {
+  if (current && clockCycleSlotIndex(current.kind) >= 0 && state.showing?.kind !== "live-score") {
     if (elapsed < policy.screenSeconds * 1000) return selected(current, "Cycle screen interval");
     if (clock) return selected(clock, "Clock between screens");
   }
   // Start with clock, and return to it after interruptions or unavailable content.
   if ((!current || current.kind !== "clock") && clock) return selected(clock, "Clock interval");
-  const cursor = Number.isInteger(state.cycleNextIndex) ? ((state.cycleNextIndex % CLOCK_CYCLE_KINDS.length) + CLOCK_CYCLE_KINDS.length) % CLOCK_CYCLE_KINDS.length : 0;
-  for (let offset = 0; offset < CLOCK_CYCLE_KINDS.length; offset++) {
-    const kind = CLOCK_CYCLE_KINDS[(cursor + offset) % CLOCK_CYCLE_KINDS.length];
-    // One child per age slot; least recently shown gives each child a turn without
-    // adding consecutive age screens or changing the weather/stars cadence.
-    const panel = eligible.filter((candidate) => candidate.kind === kind).toSorted((a, b) => {
-      const aLast = state.history[a.id]?.lastShownAt;
-      const bLast = state.history[b.id]?.lastShownAt;
-      return (aLast ? Date.parse(aLast) : -Infinity) - (bLast ? Date.parse(bLast) : -Infinity);
-    })[0];
+  const cursor = Number.isInteger(state.cycleNextIndex) ? ((state.cycleNextIndex % CLOCK_CYCLE_SLOTS.length) + CLOCK_CYCLE_SLOTS.length) % CLOCK_CYCLE_SLOTS.length : 0;
+  for (let offset = 0; offset < CLOCK_CYCLE_SLOTS.length; offset++) {
+    const slot = CLOCK_CYCLE_SLOTS[(cursor + offset) % CLOCK_CYCLE_SLOTS.length]!;
+    // Alternate children and games within their respective slots.
+    const panel = leastRecentlyShown(eligible.filter((candidate) => slot.includes(candidate.kind)), state.history)[0];
     if (panel) return selected(panel, `Clock-led cycle: ${panel.title}`);
   }
   return decision(now, clock ?? null, clock ? "Clock while cycle screens are unavailable" : "No eligible panels", clock ? "selected" : "not-shown", skipped);
@@ -101,35 +128,47 @@ function chooseClockCycle(request: SchedulerRequest, eligible: Panel[], skipped:
 /** Wake at a slot/hold boundary even when regular refreshes are aligned to a minute. */
 export function cycleRemainingMilliseconds(request: SchedulerRequest): number | null {
   const policy = request.policy ?? DEFAULT_SCREEN_POLICY;
-  if (policy.mode !== "clock-cycle") return null;
   const hold = request.state.manualHold;
   const heldFor = hold ? Date.parse(hold.until) - request.now.getTime() : 0;
   if (heldFor > 0) return heldFor;
   const showing = request.state.showing;
   const current = request.panels.find((panel) => panel.id === showing?.panelId);
   if (!current || !showing || current.critical) return null;
-  const duration = current.kind === "clock" ? policy.clockSeconds : CLOCK_CYCLE_KINDS.includes(current.kind) ? policy.screenSeconds : null;
+  const duration = current.kind === "live-score" ? (policy.mode === "clock-cycle" ? policy.screenSeconds : policy.minimumDwellSeconds)
+    : policy.mode !== "clock-cycle" ? null
+    : current.kind === "clock" ? policy.clockSeconds
+    : clockCycleSlotIndex(current.kind) >= 0 ? policy.screenSeconds : null;
   if (duration === null) return null;
   const remaining = duration * 1000 - (request.now.getTime() - Date.parse(showing.startedAt));
   return remaining > 0 ? remaining : null;
 }
 
 /** Commit display history only after successful publication, never on status reads. */
-export function recordShown(state: SchedulerState, panel: Panel, now: Date, policy: ScreenPolicy = DEFAULT_SCREEN_POLICY): SchedulerState {
+export function recordShown(state: SchedulerState, panel: Panel, now: Date, policy: ScreenPolicy = DEFAULT_SCREEN_POLICY, scoreInterrupted = false): SchedulerState {
   const version = panel.version ?? "";
   const samePanel = state.showing?.panelId === panel.id;
-  const continuing = samePanel && (policy.mode === "clock-cycle" || state.showing?.version === version);
-  const index = CLOCK_CYCLE_KINDS.indexOf(panel.kind);
+  const continuing = samePanel && (state.showing?.kind === undefined || state.showing.kind === panel.kind) && !scoreInterrupted && (panel.kind === "live-score" || policy.mode === "clock-cycle" || state.showing?.version === version);
+  const index = clockCycleSlotIndex(panel.kind);
+  // A final-score interrupt preserves the cursor through its follow-up display ticks.
+  const inInterrupt = index >= 0 && (scoreInterrupted || (samePanel && state.showing?.scoreInterrupt === true));
   const previous = state.history[panel.id];
   const activeHistory = Object.fromEntries(Object.entries(state.history)
     .filter(([, entry]) => now.getTime() - Date.parse(entry.lastShownAt) < 7 * 86400_000));
   return {
-    ...state, skippedPanelIds: [],
-    cycleNextIndex: policy.mode === "clock-cycle" && index >= 0 ? (index + 1) % CLOCK_CYCLE_KINDS.length : state.cycleNextIndex,
+    ...(policy.mode === "clock-cycle" && index >= 0 && !inInterrupt ? advanceClockCycle(state, index) : state),
+    skippedPanelIds: [],
     manualHold: state.manualHold && Date.parse(state.manualHold.until) > now.getTime() ? state.manualHold : null,
-    showing: continuing && state.showing ? { ...state.showing, version } : { panelId: panel.id, startedAt: now.toISOString(), version },
-    history: { ...activeHistory, [panel.id]: { lastShownAt: now.toISOString(), version, showCount: (previous?.showCount ?? 0) + (continuing ? 0 : 1) } },
+    showing: continuing && state.showing ? { ...state.showing, version, kind: panel.kind } : { panelId: panel.id, kind: panel.kind, startedAt: now.toISOString(), version, ...(inInterrupt ? { scoreInterrupt: true } : {}) },
+    history: { ...activeHistory, [panel.id]: { lastShownAt: now.toISOString(), version, scoreChangedAt: panel.scoreChangedAt, showCount: (previous?.showCount ?? 0) + (continuing ? 0 : 1) } },
   };
+}
+
+function leastRecentlyShown(panels: Panel[], history: SchedulerState["history"]): Panel[] {
+  return panels.toSorted((a, b) => {
+    const aLast = history[a.id]?.lastShownAt;
+    const bLast = history[b.id]?.lastShownAt;
+    return (aLast ? Date.parse(aLast) : -Infinity) - (bLast ? Date.parse(bLast) : -Infinity);
+  });
 }
 
 export function isExpired(panel: Panel, now: Date): boolean {

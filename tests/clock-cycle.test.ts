@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_SCREEN_POLICY } from "../src/core/policy.js";
 import { normalizeOptions } from "../src/core/config.js";
-import { buildPanels } from "../src/core/panels.js";
+import { buildPanels, type SportsSnapshot } from "../src/core/panels.js";
 import { choosePanel, defaultSchedulerState, recordShown, cycleRemainingMilliseconds, markSkipped } from "../src/core/scheduler.js";
 import type { Panel, SchedulerState } from "../src/core/types.js";
 import { TidbytrRuntime } from "../src/server/runtime.js";
@@ -58,7 +58,7 @@ describe("clock-led cycle", () => {
     const disabled = { ...commit(defaultSchedulerState(), 0), disabledSources: ["nws" as const] };
     expect(select(disabled, 60).id).toBe("baby-age");
   });
-  it("stays on clock when no cycle items are available and excludes ordinary sports/advisories", () => {
+  it("stays on clock when no cycle items are available and excludes ordinary advisories", () => {
     let state = commit(defaultSchedulerState(), 0);
     const clock = panels(60).filter((panel) => panel.kind === "clock");
     const advisory: Panel = { ...panels(60)[1]!, id: "advisory", kind: "nws-alert", priority: 100, source: "nws", critical: false };
@@ -66,6 +66,21 @@ describe("clock-led cycle", () => {
     state = recordShown(state, clock[0]!, after(60), policy);
     expect(select(state, 1000, panels(1000).filter((panel) => panel.kind === "clock")).id).toBe("clock");
   });
+  it("rotates one upcoming or final game at a time after the regular screens", () => {
+    const state = { ...commit(defaultSchedulerState(), 0), cycleNextIndex: 3 };
+    const choices = (seconds: number) => [...panels(seconds),
+      ...buildPanels(config(), { alerts: [], forecast: null }, { games: [
+        { id: "nebraska", startsAt: after(1800).toISOString(), team: "NEB", opponent: "IOWA", status: "scheduled" },
+        { id: "kansas", startsAt: now.toISOString(), team: "KU", opponent: "KSU", status: "final", teamScore: 90, opponentScore: 80 },
+      ] }, after(seconds)).filter((panel) => panel.source === "sports"),
+    ];
+    expect(select(state, 20, choices(20)).id).toBe("clock");
+    let current = commit(state, 60, choices(60));
+    expect(current.showing?.panelId).toBe("sports-nebraska");
+    for (const second of [80, 140, 160, 220, 240, 300, 320, 380]) current = commit(current, second, choices(second));
+    expect(current.showing?.panelId).toBe("sports-kansas");
+  });
+
   it("lets critical alerts interrupt, then resumes with a full clock interval and the pending item", () => {
     let state = commit(defaultSchedulerState(), 0); state = commit(state, 60); state = commit(state, 80);
     expect(select(state, 100, panels(100, true)).critical).toBe(true);
@@ -129,11 +144,11 @@ describe("clock-led cycle", () => {
   });
 });
 
-async function runtimeFixture(renderer = new FakeRenderer(), transport = new FakeCloudTransport()) {
+async function runtimeFixture(renderer = new FakeRenderer(), transport = new FakeCloudTransport(), sports: SportsSnapshot = { games: [] }) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "tidbytr-cycle-"));
   const store = new TidbytrStore(":memory:");
   const runtime = new TidbytrRuntime({ config: { ...config(), dataDir }, store, renderer, transport,
-    weatherProvider: new FakeWeatherProvider({ alerts: [], forecast: { temperature: 72, shortForecast: "Sunny" } }), sportsProvider: new FakeSportsProvider({ games: [] }) });
+    weatherProvider: new FakeWeatherProvider({ alerts: [], forecast: { temperature: 72, shortForecast: "Sunny" } }), sportsProvider: new FakeSportsProvider(sports) });
   await runtime.refreshSources(now);
   return { runtime, store, transport, async close() { await runtime.close(); fs.rmSync(dataDir, { recursive: true, force: true }); } };
 }
@@ -147,6 +162,79 @@ describe("clock-cycle publication", () => {
       expect((await fixture.runtime.getStatus(after(140))).display.currentPanel?.id).toBe("baby-age");
     } finally { await fixture.close(); }
   });
+  it("foregrounds live coverage and score changes, then resumes the clock after play ends", async () => {
+    const game = { id: "husker-vb", team: "NEB", opponent: "IOWA", startsAt: now.toISOString(),
+      status: "live" as const, teamScore: 0, opponentScore: 0, set: 1, teamSetPoints: 0, opponentSetPoints: 0 };
+    const sports: SportsSnapshot = { games: [] };
+    const fixture = await runtimeFixture(undefined, undefined, sports);
+    try {
+      await fixture.runtime.publish(undefined, now);
+      sports.games = [game];
+      await fixture.runtime.refreshSources(after(5));
+      expect((await fixture.runtime.publish(undefined, after(5))).decision.reason).toBe("Live game display");
+
+      game.teamSetPoints = 1;
+      await fixture.runtime.refreshSources(after(10));
+      const original = fixture.transport.push.bind(fixture.transport);
+      fixture.transport.push = async (frame, options) => ({ ...await original(frame, options), ok: false, status: 503, message: "HTTP 503" });
+      await expect(fixture.runtime.publish(undefined, after(10))).rejects.toThrow("503");
+      fixture.transport.push = original;
+      expect((await fixture.runtime.publish(undefined, after(11))).decision.reason).toBe("Score change interrupt");
+      const originalStart = fixture.store.getSchedulerState(null).showing?.startedAt;
+
+      await fixture.runtime.refreshSources(after(12));
+      expect((await fixture.runtime.publish(undefined, after(12))).decision.reason).toBe("Live game display");
+      expect(fixture.transport.calls.at(-1)?.options.background).toBe(true);
+      expect(fixture.store.getSchedulerState(null).showing?.startedAt).toBe(originalStart);
+
+      game.opponentSetPoints = 1;
+      await fixture.runtime.refreshSources(after(15));
+      expect((await fixture.runtime.publish(undefined, after(15))).decision.reason).toBe("Score change interrupt");
+      expect(fixture.transport.calls.at(-1)?.options.background).toBe(false);
+      expect(fixture.store.getSchedulerState(null)).toMatchObject({ cycleNextIndex: 0, showing: { startedAt: after(15).toISOString() } });
+      expect((await fixture.runtime.publish(undefined, after(34))).panel?.id).toBe("sports-husker-vb");
+      expect((await fixture.runtime.publish(undefined, after(35))).panel?.id).toBe("sports-husker-vb");
+      game.teamSetPoints = 2;
+      await fixture.runtime.refreshSources(after(35));
+      await fixture.runtime.publish(undefined, after(35));
+      sports.games = [{ ...game, status: "final" }];
+      await fixture.runtime.refreshSources(after(36));
+      expect((await fixture.runtime.publish(undefined, after(36))).panel?.id).toBe("clock");
+      expect(fixture.store.getSchedulerState(null).cycleNextIndex).toBe(0);
+    } finally { await fixture.close(); }
+  });
+
+  it("alternates simultaneous live games without showing clock between them", () => {
+    const sports = (seconds: number) => buildPanels(config(), { alerts: [], forecast: null }, { games: [
+      { id: "nebraska", startsAt: now.toISOString(), team: "NEB", opponent: "IOWA", status: "live" },
+      { id: "iowa-state", startsAt: now.toISOString(), team: "ISU", opponent: "KU", status: "live" },
+    ] }, after(seconds));
+    let state = commit(defaultSchedulerState(), 0, sports(0));
+    expect(state.showing?.panelId).toBe("sports-nebraska");
+    state = commit(state, 19, sports(19));
+    expect(state.showing?.panelId).toBe("sports-nebraska");
+    state = commit(state, 20, sports(20));
+    expect(state.showing?.panelId).toBe("sports-iowa-state");
+    state = commit(state, 40, sports(40));
+    expect(state.showing?.panelId).toBe("sports-nebraska");
+    expect(state.cycleNextIndex).toBe(0);
+  });
+
+  it("prioritizes critical alerts and manual holds, and respects quiet hours, snooze, and freshness", () => {
+    const state = commit(defaultSchedulerState(), 0);
+    const choices = panels(10, true);
+    const live: Panel = { ...choices[0]!, id: "sports-husker", kind: "live-score", source: "sports",
+      scoreChangedAt: after(10).toISOString(), expiresAt: after(200).toISOString() };
+    expect(select(state, 10, [...choices, live]).critical).toBe(true);
+    const normal = () => [...panels(10), live];
+    expect(select(state, 10, normal()).id).toBe(live.id);
+    expect(select({ ...state, manualHold: { panelId: "clock", until: after(99).toISOString() } }, 10, normal()).id).toBe("clock");
+    expect(select({ ...state, snoozedUntil: after(99).toISOString() }, 10, normal()).id).toBe("clock");
+    expect(select({ ...state, quietHours: { start: "12:00", end: "13:00" } }, 10, normal()).id).toBe("clock");
+    expect(select({ ...state, disabledSources: ["sports"] }, 10, normal()).id).toBe("clock");
+    expect(select(state, 100, [...panels(100), live]).id).toBe(live.id);
+  });
+
   it("does not advance the cycle on upload failure", async () => {
     const fixture = await runtimeFixture();
     try {

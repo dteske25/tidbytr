@@ -35,6 +35,7 @@ export interface Panel {
   ttlSeconds: number;
   expiresAt: string;
   critical?: boolean;
+  scoreChangedAt?: string;
   version?: string;
   payload: unknown;
 }
@@ -114,6 +115,7 @@ export interface DisplayHistory {
   lastShownAt: string;
   version: string;
   showCount: number;
+  scoreChangedAt?: string;
 }
 
 export interface PublishedFrame {
@@ -134,7 +136,7 @@ export interface SchedulerState {
   disabledSources: SourceId[];
   quietHours: QuietHours | null;
   history: Record<string, DisplayHistory>;
-  showing: { panelId: string; startedAt: string; version: string } | null;
+  showing: { panelId: string; startedAt: string; version: string; kind?: PanelKind; scoreInterrupt?: boolean } | null;
   manualHold: { panelId: string; until: string } | null;
 }
 

@@ -35,9 +35,16 @@ export interface SportsGame {
   opponent: string;
   startsAt: string;
   status: "scheduled" | "live" | "final";
+  timeTbd?: boolean;
+  home?: boolean;
   teamScore?: number;
   opponentScore?: number;
   period?: string;
+  set?: number;
+  teamSetPoints?: number;
+  opponentSetPoints?: number;
+  scoreChangedAt?: string;
+  feed?: string;
   observedAt?: string;
   completedAt?: string;
   league?: string;
@@ -93,7 +100,7 @@ export function buildPanels(config: RuntimeConfig, weather: WeatherSnapshot, spo
     const observedAt = game.observedAt ?? createdAt;
     if (!Number.isFinite(Date.parse(game.startsAt))) continue;
     if (game.status === "scheduled" && (Date.parse(game.startsAt) - now.getTime() > 86400_000 || Date.parse(game.startsAt) < now.getTime() - 3600_000)) continue;
-    const candidate = gamePanel(game, observedAt, now);
+    const candidate = gamePanel(game, observedAt);
     if (Date.parse(candidate.expiresAt) > now.getTime()) panels.push(candidate);
   }
 
@@ -116,15 +123,17 @@ export function clockPanel(createdAt = new Date().toISOString(), timezone = "UTC
   };
 }
 
-function gamePanel(game: SportsGame, createdAt: string, now: Date): Panel {
+function gamePanel(game: SportsGame, createdAt: string): Panel {
+  const id = `sports-${game.feed && game.feed !== game.league ? safeId(game.league ?? "") + "-" : ""}${safeId(game.id)}`;
   if (game.status === "live") {
     return {
-      id: `sports-${safeId(game.id)}`,
+      id,
       kind: "live-score",
       source: "sports",
       title: `${game.team} live`,
       priority: 85,
       createdAt,
+      scoreChangedAt: game.scoreChangedAt,
       ttlSeconds: 90,
       expiresAt: addSeconds(new Date(createdAt), 90),
       payload: game,
@@ -133,12 +142,13 @@ function gamePanel(game: SportsGame, createdAt: string, now: Date): Panel {
 
   if (game.status === "final") {
     return {
-      id: `sports-${safeId(game.id)}`,
+      id,
       kind: "final-score",
       source: "sports",
       title: `${game.team} final`,
       priority: 65,
       createdAt,
+      scoreChangedAt: game.scoreChangedAt,
       ttlSeconds: 3600,
       expiresAt: addSeconds(new Date(game.completedAt ?? createdAt), 3600),
       payload: game,
@@ -146,7 +156,7 @@ function gamePanel(game: SportsGame, createdAt: string, now: Date): Panel {
   }
 
   return {
-    id: `sports-${safeId(game.id)}`,
+    id,
     kind: "upcoming-game",
     source: "sports",
     title: `${game.team} upcoming`,
@@ -167,8 +177,11 @@ function safeId(value: string): string {
 }
 
 export function panelVersion(panel: Panel): string {
-  const payload = panel.kind === "clock" ? panel.payload : panel.source === "sports"
-    ? (({ id, teamScore, opponentScore, status }: SportsGame) => ({ id, teamScore, opponentScore, status }))(panel.payload as SportsGame)
-    : panel.payload;
+  const payload = panel.source === "sports" ? sportsVersion(panel.payload as SportsGame) : panel.payload;
   return createHash("sha256").update(JSON.stringify(payload)).digest("hex").slice(0, 16);
+}
+
+function sportsVersion(game: SportsGame) {
+  const { id, team, opponent, startsAt, timeTbd, home, status, teamScore, opponentScore, set, teamSetPoints, opponentSetPoints, scoreChangedAt } = game;
+  return { id, team, opponent, startsAt, timeTbd, home, status, teamScore, opponentScore, set, teamSetPoints, opponentSetPoints, scoreChangedAt };
 }

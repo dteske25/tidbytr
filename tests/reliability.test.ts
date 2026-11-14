@@ -318,26 +318,29 @@ describe("priority policy over time", () => {
     expect(choosePanel({ panels, now: after(40), state }).selectedPanelId).toBe(first.id);
   });
 
-  it("shows every ordinary kind in a busy ten-minute timeline", () => {
+  it("resumes the priority rotation when live coverage ends", () => {
     let state = defaultSchedulerState();
     const seen = new Set<string>();
     for (let seconds = 0; seconds < 600; seconds += 20) {
       const time = after(seconds);
       const game = { team: "KC", opponent: "DEN", startsAt: after(3600).toISOString(), observedAt: time.toISOString() };
       const panels = buildPanels(testConfig(), { ...weather, forecastObservedAt: now.toISOString(), alertsObservedAt: now.toISOString(), alerts: [{ ...warning, severity: "advisory", event: "Wind Advisory" }] }, { games: [
-        { ...game, id: "live", status: "live" }, { ...game, id: "upcoming", status: "scheduled" }, { ...game, id: "final", status: "final", completedAt: now.toISOString() },
+        ...(seconds < 120 ? [{ ...game, id: "live", status: "live" as const }] : []),
+        { ...game, id: "upcoming", status: "scheduled" }, { ...game, id: "final", status: "final", completedAt: now.toISOString() },
       ] }, time);
-      const result = choosePanel({ panels, now: time, state });
+      const policy = testConfig().screenPolicy;
+      const result = choosePanel({ panels, now: time, state, policy });
       const selected = panels.find((panel) => panel.id === result.selectedPanelId)!;
+      if (seconds < 120) expect(selected.kind).toBe("live-score");
       seen.add(selected.kind);
-      state = recordShown(state, selected, time);
+      state = recordShown(state, selected, time, policy);
     }
     expect([...seen].sort()).toEqual(["clock", "final-score", "forecast", "live-score", "nws-alert", "upcoming-game"]);
   });
 
   it("honors custom priorities and dwell rules", () => {
     const config = testConfig({ screenPolicy: { ...DEFAULT_SCREEN_POLICY, mode: "priority", minimumDwellSeconds: 40, priorities: { ...DEFAULT_SCREEN_POLICY.priorities, forecast: 95 } } });
-    const panels = buildPanels(config, weather, { games: [{ id: "live", team: "KC", opponent: "DEN", startsAt: now.toISOString(), status: "live" }] }, now);
+    const panels = buildPanels(config, weather, { games: [{ id: "upcoming", team: "KC", opponent: "DEN", startsAt: after(3600).toISOString(), status: "scheduled" }] }, now);
     const first = choosePanel({ panels, now, state: defaultSchedulerState(), policy: config.screenPolicy });
     expect(first.selectedPanelId).toBe("forecast");
     const forecast = panels.find((panel) => panel.id === "forecast")!;

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.0
+
+- Add six selectable college favorites across Nebraska, Iowa State, and Kansas.
+- Rotate upcoming and final games alongside the clock. Keep live scores on screen during play. Show local start times and last-hour countdowns.
+- Request immediate display on score changes, including volleyball set points, while honoring critical warnings, manual holds, quiet hours, and snooze.
+
 ## 0.9.0
 
 - Configure multiple children in Personal screens or HA, with a name, birth date, and boy (blue), girl (pink), or neutral (green) style for each.

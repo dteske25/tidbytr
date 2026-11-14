@@ -2,7 +2,7 @@
 
 Tidbytr runs a custom app on a **Tidbyt Gen 2 with stock firmware**, alongside Store apps. A local TypeScript server and Home Assistant add-on render clock, U.S. National Weather Service forecasts/alerts, and favorite-team sports scores, then push the selected screen through the Tidbyt API.
 
-By default, a 30-second clock separates 15-second weather, baby-age, and star-flight screens. Critical warnings/watches can interrupt. Quiet hours, snooze, and manual controls remain available. Priority scheduling is an alternative mode for event-driven weather/sports and background coexistence with Store apps. These rules govern Tidbytr's selections; device/cloud latency and other installed apps can affect physical display time.
+By default, a 30-second clock separates 15-second weather, baby-age, and star-flight screens. Critical warnings/watches can interrupt. Quiet hours, snooze, and manual controls remain available. Upcoming games join the clock-led rotation, and live games pause it. Priority scheduling is available for background coexistence with Store apps. These rules govern Tidbytr's selections; device/cloud latency and other installed apps can affect physical display time.
 
 ## Install and configure
 
@@ -34,7 +34,7 @@ You need a Gen 2 configured in the Tidbyt mobile app, its device ID/API key, Int
    quiet_hours_end: ""
    ```
 
-   Replace the credentials, location, timezone, and contact. Favorite teams accept abbreviations or full names from the NFL, NBA, MLB, and NHL; use `[]` to disable sports. Set both quiet-hour fields (for example `22:00` and `06:00`) to enable quiet hours.
+   Replace the credentials, location, timezone, and contact. Open **Favorite teams** in the dashboard to select college teams. Pro favorites accept NFL, NBA, MLB, and NHL abbreviations or full names. Clear the list to disable sports. Set both quiet-hour fields (for example `22:00` and `06:00`) to enable quiet hours.
 4. Save and start the add-on. Use **Open Web UI** through Home Assistant Ingress. Enable Start on boot if desired.
 5. Check cloud delivery reports **Accepted**, then check the physical device. Keep `installation_id` unchanged to update the same app. Other apps stay managed in the Tidbyt mobile app.
 
@@ -43,7 +43,7 @@ API acceptance confirms a server response, not physical display. Outbound HTTPS 
 ## Upgrade from 0.5 / HDK
 
 1. Back up the existing add-on and note its settings. If you flashed HDK, restore production firmware using [HDK's Back to Normal instructions](https://github.com/tidbyt/hdk#back-to-normal) for Gen 2. If already on stock firmware, no firmware change is needed. This server does not flash the device.
-2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.9.0**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
+2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.10.0**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
 3. Enter `tidbyt_api_token` and `tidbyt_device_id`, keeping your location, timezone, teams, and quiet hours.
 4. Remove the obsolete `display_base_url` option and any retained port 8788 mapping. Save and restart. The old `/current.webp` firmware feed is no longer served.
 5. Open the dashboard, check API acceptance, then try Show now and observe the actual device and animated weather app.
@@ -79,7 +79,23 @@ Open **Rotation** in the dashboard to choose a mode and adjust durations. The de
 | Clock | 30 seconds |
 | Star flight | 15 seconds |
 
-Then repeat. Clock occupies two-thirds of the default 2-minute, 15-second cycle. Disabled/unavailable screens are skipped; no eligible screens means clock continues. Each cycle item gets a turn regardless of the priority-mode cooldown settings. Ordinary sports/advisories are not inserted into this three-screen cycle; choose Priority scheduling to include them.
+When a favorite-team game is available, the cycle adds a 30-second clock slot followed by 15 seconds of sports. Multiple games take turns. Disabled or unavailable screens are skipped. Ordinary weather advisories appear in Priority mode.
+
+### Favorite teams
+
+Use **Favorite teams** in the dashboard, or set these values under `favorite_teams` in the add-on configuration. Use the dashboard for changes after it has saved settings.
+
+```yaml
+favorite_teams:
+  - nebraska-football
+  - nebraska-volleyball
+  - nebraska-mens-basketball
+  - iowa-state-football
+  - iowa-state-mens-basketball
+  - kansas-mens-basketball
+```
+
+Upcoming games show the local start time and switch to a countdown in the final hour. Live games pause the regular rotation until play ends. If games overlap, their scoreboards take turns. Final scores rejoin the regular rotation for an hour. ESPN is checked every 30 seconds during live games. As soon as Tidbytr detects a changed score, it requests immediate display, including when that game is already on screen. Volleyball updates include sets won and the current set's points when available. Critical weather alerts and manual holds take precedence, and score updates respect quiet hours and snooze.
 
 Critical warnings/watches interrupt immediately. After an alert clears, a full clock interval precedes the next pending cycle item. Show now overrides with its selection hold; Skip returns to clock and advances to the following item; Snooze/quiet hours allow clock and critical alerts. Render failures publish a degraded clock and skip that item for this round after successful delivery. Failed uploads do not advance the cycle. Cursor state persists across restarts.
 

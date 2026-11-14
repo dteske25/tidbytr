@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import type { FrameBundle, Panel, RuntimeConfig } from "../core/types.js";
 import type { SportsGame, WeatherAlert, WeatherSnapshot } from "../core/panels.js";
+import { sportsDisplay } from "./sports-display.js";
 import { clockDisplay, babyAgeDisplay } from "./local-screens.js";
 import { starfieldFrames, STARFIELD_DELAY_MS } from "./starfield.js";
 import { weatherDisplay, WEATHER_FRAME_DELAY_MS } from "./weather.js";
@@ -9,12 +10,12 @@ import { glyphWidth } from "./pixelFont.js";
 import type { DisplayRenderer } from "./types.js";
 
 export class SharpRenderer implements DisplayRenderer {
-  async render(panel: Panel, now: Date, _config: RuntimeConfig): Promise<FrameBundle> {
-    return renderPanel(panel, now);
+  async render(panel: Panel, now: Date, config: RuntimeConfig): Promise<FrameBundle> {
+    return renderPanel(panel, now, config.timezone);
   }
 }
 
-export async function renderPanel(panel: Panel, now = new Date()): Promise<FrameBundle> {
+export async function renderPanel(panel: Panel, now = new Date(), timeZone = "UTC"): Promise<FrameBundle> {
   const canvas = new PixelCanvas(COLORS.black);
   let canvases = [canvas];
   let frameDelay = WEATHER_FRAME_DELAY_MS;
@@ -47,7 +48,7 @@ export async function renderPanel(panel: Panel, now = new Date()): Promise<Frame
     case "upcoming-game":
     case "live-score":
     case "final-score":
-      renderGame(canvas, panel.payload as unknown as SportsGame, panel.kind);
+      renderGame(canvas, sportsDisplay(panel.payload as SportsGame, panel.kind, now, timeZone), panel.kind);
       break;
     default:
       renderFallback(canvas, panel.title);
@@ -117,16 +118,23 @@ function renderForecast(canvas: PixelCanvas, forecast: NonNullable<WeatherSnapsh
   canvas.drawText(display.low, 35, 25, hexColor("#65BFFF"));
 }
 
-function renderGame(canvas: PixelCanvas, game: SportsGame, kind: Panel["kind"]): void {
+function renderGame(canvas: PixelCanvas, game: ReturnType<typeof sportsDisplay>, kind: Panel["kind"]): void {
   const accent = kind === "live-score" ? COLORS.green : kind === "final-score" ? COLORS.blue : COLORS.yellow;
-  const label = kind === "live-score" ? "LIVE" : kind === "final-score" ? "FINAL" : "NEXT";
-  canvas.drawText(label, 2, 2, accent, 1);
-  canvas.drawText(trim(game.team, 5), 2, 10, COLORS.white, 1);
-  canvas.drawText(trim(game.opponent, 5), 39, 10, COLORS.white, 1);
-  canvas.drawText(`${game.teamScore ?? 0}`, 7, 19, COLORS.white, 2);
-  canvas.drawText(`${game.opponentScore ?? 0}`, 45, 19, COLORS.white, 2);
-  canvas.fillRect(28, 15, 8, 2, accent);
-  canvas.drawText(trim(game.period ?? formatGameTime(game.startsAt), 11), 12, 3, COLORS.muted, 1);
+  canvas.fillRect(0, 0, 64, 2, accent);
+  canvas.drawText(game.header, 2, 4, accent);
+  if (kind === "upcoming-game") {
+    canvas.drawText(game.day, 62 - canvas.measureText(game.day), 4, COLORS.muted);
+    canvas.drawText(game.matchup, Math.floor((64 - canvas.measureText(game.matchup)) / 2), 12, COLORS.white);
+    const scale = canvas.measureText(game.time, 2) <= 60 ? 2 : 1;
+    canvas.drawText(game.time, Math.floor((64 - canvas.measureText(game.time, scale)) / 2), 21, COLORS.white, scale);
+    return;
+  }
+  if (kind === "live-score") canvas.drawText(fitText(game.detail, 31), 32, 4, COLORS.muted);
+  canvas.drawText(game.team, 2, 11, COLORS.white);
+  canvas.drawText(game.opponent, 39, 11, COLORS.white);
+  canvas.drawText(game.teamScore, 5, 20, COLORS.white, 2);
+  canvas.drawText(game.opponentScore, 39, 20, COLORS.white, 2);
+  canvas.fillRect(29, 21, 6, 2, accent);
 }
 
 function renderFallback(canvas: PixelCanvas, title: string): void {
@@ -184,21 +192,4 @@ function wrapText(value: string, maxPixels: number, maxLines: number): string[] 
 function textWidth(value: string): number {
   const chars = [...value.toUpperCase()];
   return chars.reduce((total, char, index) => total + glyphWidth(char) + (index === chars.length - 1 ? 0 : 1), 0);
-}
-
-function formatGameTime(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "TBD";
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "2-digit",
-    hour: "numeric",
-    timeZone: "UTC",
-  })
-    .format(date)
-    .toUpperCase()
-    .replace(",", "");
 }
