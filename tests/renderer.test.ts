@@ -7,6 +7,8 @@ import { clockPanel } from "../src/core/panels.js";
 import type { Panel, RuntimeConfig } from "../src/core/types.js";
 import { PixletRenderer, type PixletProcessRunner } from "../src/renderer/pixlet.js";
 import { renderPanel, SharpRenderer } from "../src/renderer/renderer.js";
+import { sportsDisplay } from "../src/renderer/sports-display.js";
+import { SportsLogoCache } from "../src/renderer/sports-logos.js";
 import { validateDisplayFrame } from "../src/core/publisher.js";
 import { testConfig } from "./helpers/fakes.js";
 
@@ -115,35 +117,63 @@ describe("pixlet renderer", () => {
     );
   });
 
-  it("routes sports panels through Pixlet templates", async () => {
+  it("shares the native sports scoreboard across renderer modes", async () => {
     const runner = new WritingPixletRunner();
     const renderer = new PixletRenderer({ runner });
-    await renderer.render(
-      panel("live-score", {
-        id: "kc-live",
-        team: "KC",
-        opponent: "DEN",
-        startsAt: "2026-06-28T18:00:00.000Z",
-        status: "live",
-        teamScore: 14,
-        opponentScore: 10,
-      }),
-      new Date("2026-06-28T12:00:00.000Z"),
-      testConfig(),
-    );
-
-    expect(runner.calls).toHaveLength(1);
-    expect(runner.calls[0]?.args.some((arg) => arg.endsWith("app.star"))).toBe(true);
-    expect(pixletPayload(runner.calls[0]?.args ?? [])).toMatchObject({
-      kind: "live-score",
-      display: {
-        label: "LIVE",
-        team: "KC",
-        opponent: "DEN",
-        teamScore: "14",
-        opponentScore: "10",
-      },
+    const input = panel("live-score", {
+      team: "KC", opponent: "DEN", startsAt: "2026-06-28T18:00:00Z",
+      status: "live", home: true, teamScore: 14, opponentScore: 10,
     });
+    const now = new Date("2026-06-28T12:00:00Z");
+    const frame = await renderer.render(input, now, testConfig());
+    expect(frame.webp).toEqual((await new SharpRenderer().render(input, now, testConfig())).webp);
+    expect(runner.calls).toHaveLength(0);
+  });
+
+  it("puts volleyball set points in the main score and sets won under each team", () => {
+    const now = new Date("2026-06-28T12:00:00Z");
+    const game = {
+      id: "volleyball", team: "NEB", opponent: "IOWA", startsAt: now.toISOString(), home: true,
+      status: "live" as const, league: "volleyball/womens-college-volleyball", set: 4,
+      teamScore: 2, opponentScore: 1, teamSetPoints: 24, opponentSetPoints: 0,
+    };
+    expect(sportsDisplay(game, "live-score", now, "UTC")).toMatchObject({
+      rows: [{ name: "IOWA", score: "0", sets: "1 SET" }, { name: "NEB", score: "24", sets: "2 SETS" }],
+      status: "SET 4",
+    });
+    expect(sportsDisplay({ ...game, teamSetPoints: undefined }, "live-score", now, "UTC").rows[1]?.score).toBe("--");
+    expect(sportsDisplay(game, "final-score", now, "UTC")).toMatchObject({
+      rows: [{ score: "1", sets: "" }, { score: "2", sets: "" }], status: "FINAL SETS",
+    });
+  });
+
+  it("draws right-aligned three-digit scores and keeps the rows and footer distinct", async () => {
+    const input = panel("live-score", {
+      team: "NEB", opponent: "ISU", home: true, teamScore: 103, opponentScore: 98, period: "1:42 - 2ND",
+      league: "basketball/mens-college-basketball",
+    });
+    const frame = await renderPanel(input);
+    const image = await firstFramePixels(frame.webp);
+    for (const y of [1, 13]) {
+      expect(litPixels(image, { x: 17, y, width: 16, height: 10 })).toBeGreaterThan(10);
+      expect(litPixels(image, { x: 39, y, width: 22, height: 10 })).toBeGreaterThan(45);
+      expect(litPixels(image, { x: 61, y, width: 3, height: 10 })).toBe(0);
+    }
+  });
+
+  it("renders while logos are pending and caches one bounded CDN download per URL", async () => {
+    const png = await sharp({ create: { width: 20, height: 20, channels: 4, background: "#e31937" } }).png().toBuffer();
+    let requests = 0;
+    const cache = new SportsLogoCache(async () => {
+      requests++;
+      return new Response(new Uint8Array(png));
+    });
+    const url = "https://a.espncdn.com/i/teamlogos/ncaa/500-dark/158.png";
+    expect(cache.get("https://example.org/i/teamlogos/ncaa/500-dark/158.png")).toBeUndefined();
+    expect(cache.get(url)).toBeUndefined();
+    expect(cache.get(url)).toBeUndefined();
+    await expect.poll(() => cache.get(url)?.length).toBe(400);
+    expect(requests).toBe(1);
   });
 
   it("uses Pixlet Marquee for NWS alert text", () => {
@@ -271,32 +301,7 @@ describe.runIf(hasPixlet())("pixlet integration", () => {
     expect(litPixels(image, { x: 2, y: 21, width: 60, height: 9 })).toBeGreaterThan(20);
   });
 
-  it("keeps live score teams and scores in stable regions", async () => {
-    const renderer = new PixletRenderer();
-    const frame = await renderer.render(
-      panel("live-score", {
-        id: "kc-live",
-        team: "KC",
-        opponent: "DEN",
-        startsAt: "2026-06-28T18:00:00.000Z",
-        status: "live",
-        teamScore: 14,
-        opponentScore: 10,
-        period: "Q2 08:41",
-      }),
-      new Date("2026-06-28T12:00:00.000Z"),
-      testConfig(),
-    );
-    const image = await firstFramePixels(frame.webp);
 
-    expect(litPixels(image, { x: 0, y: 0, width: 64, height: 3 })).toBeGreaterThan(40);
-    expect(litPixels(image, { x: 2, y: 2, width: 27, height: 8 })).toBeGreaterThan(20);
-    expect(litPixels(image, { x: 2, y: 10, width: 24, height: 9 })).toBeGreaterThan(10);
-    expect(litPixels(image, { x: 38, y: 10, width: 24, height: 9 })).toBeGreaterThan(15);
-    expect(litPixels(image, { x: 5, y: 19, width: 18, height: 13 })).toBeGreaterThan(20);
-    expect(litPixels(image, { x: 43, y: 19, width: 18, height: 13 })).toBeGreaterThan(20);
-    expect(litPixels(image, { x: 28, y: 19, width: 8, height: 5 })).toBeGreaterThan(10);
-  });
 });
 
 function hash(buffer: Buffer) {

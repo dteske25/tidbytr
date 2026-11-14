@@ -38,12 +38,12 @@ You need a Gen 2 configured in the Tidbyt mobile app, its device ID/API key, Int
 4. Save and start the add-on. Use **Open Web UI** through Home Assistant Ingress. Enable Start on boot if desired.
 5. Check cloud delivery reports **Accepted**, then check the physical device. Keep `installation_id` unchanged to update the same app. Other apps stay managed in the Tidbyt mobile app.
 
-API acceptance confirms a server response, not physical display. Outbound HTTPS is required to `api.tidbyt.com`, `api.weather.gov`, and `site.api.espn.com` (when sports are enabled).
+API acceptance confirms a server response, not physical display. Outbound HTTPS is required to `api.tidbyt.com` and `api.weather.gov`. Sports use `site.api.espn.com` for scores and `a.espncdn.com` for team logos.
 
 ## Upgrade from 0.5 / HDK
 
 1. Back up the existing add-on and note its settings. If you flashed HDK, restore production firmware using [HDK's Back to Normal instructions](https://github.com/tidbyt/hdk#back-to-normal) for Gen 2. If already on stock firmware, no firmware change is needed. This server does not flash the device.
-2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.10.0**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
+2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.10.1**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
 3. Enter `tidbyt_api_token` and `tidbyt_device_id`, keeping your location, timezone, teams, and quiet hours.
 4. Remove the obsolete `display_base_url` option and any retained port 8788 mapping. Save and restart. The old `/current.webp` firmware feed is no longer served.
 5. Open the dashboard, check API acceptance, then try Show now and observe the actual device and animated weather app.
@@ -95,7 +95,7 @@ favorite_teams:
   - kansas-mens-basketball
 ```
 
-Upcoming games show the local start time and switch to a countdown in the final hour. Live games pause the regular rotation until play ends. If games overlap, their scoreboards take turns. Final scores rejoin the regular rotation for an hour. ESPN is checked every 30 seconds during live games. As soon as Tidbytr detects a changed score, it requests immediate display, including when that game is already on screen. Volleyball updates include sets won and the current set's points when available. Critical weather alerts and manual holds take precedence, and score updates respect quiet hours and snooze.
+Upcoming games show the local start time and switch to a countdown in the final hour. Live games pause the regular rotation until play ends. If games overlap, their scoreboards take turns. Final scores rejoin the regular rotation for an hour. ESPN is checked every 30 seconds during live games. As soon as Tidbytr detects a changed score, it requests immediate display, including when that game is already on screen. Sports screens put the away team above the home team, with a logo and abbreviation on the left and the score on the right. Live volleyball displays current-set points in large numbers and sets won beneath each team abbreviation. Volleyball finals display sets won as the final score. Logos load in the background, with a team-colored abbreviation while artwork is unavailable. The team rows draw inspiration from the [NCAAB Scores app in Tidbyt's community repository](https://github.com/tidbyt/community/tree/main/apps/ncaabscores). Critical weather alerts and manual holds take precedence, and score updates respect quiet hours and snooze.
 
 Critical warnings/watches interrupt immediately. After an alert clears, a full clock interval precedes the next pending cycle item. Show now overrides with its selection hold; Skip returns to clock and advances to the following item; Snooze/quiet hours allow clock and critical alerts. Render failures publish a degraded clock and skip that item for this round after successful delivery. Failed uploads do not advance the cycle. Cursor state persists across restarts.
 

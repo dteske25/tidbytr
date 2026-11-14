@@ -103,7 +103,9 @@ describe("providers", () => {
           return jsonResponse({ events: [{
             id: team.key, date: live ? now.toISOString() : "2026-11-14T21:30:00Z", timeValid: team.teamId !== "66",
             competitions: [{ status: { type: { state: live ? "in" : "pre" } }, competitors: [
-              { homeAway: "home", team: { id: team.teamId, abbreviation: team.teamId === "158" ? "NEB" : "OTHER" } },
+              { homeAway: "home", team: { id: team.teamId, abbreviation: team.teamId === "158" ? "NEB" : "OTHER",
+                color: "e31937", logos: [{ href: "https://a.espncdn.com/i/teamlogos/ncaa/500-dark/158.png", rel: ["dark"] }],
+              } },
               { team: { id: "10", abbreviation: "OPP" } },
             ] }],
           }] });
@@ -123,6 +125,7 @@ describe("providers", () => {
     expect(snapshot.games).toHaveLength(6);
     expect(snapshot.games.find(({ id }) => id === "nebraska-volleyball")).toMatchObject({
       status: "live", teamScore: 1, opponentScore: 0, set: 2, teamSetPoints: 0, opponentSetPoints: 7,
+      home: true, teamArtwork: { color: "e31937", logo: "https://a.espncdn.com/i/teamlogos/ncaa/500-dark/158.png" },
     });
     expect(snapshot.games.find(({ id }) => id === "iowa-state-football")).toMatchObject({
       status: "scheduled", timeTbd: true, startsAt: "2026-11-14T21:30:00Z",

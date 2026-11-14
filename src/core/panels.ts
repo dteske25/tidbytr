@@ -29,12 +29,19 @@ export interface SportsSnapshot {
   games: SportsGame[];
 }
 
+export interface SportsTeamArtwork {
+  logo?: string;
+  color?: string;
+}
+
 export interface SportsGame {
   id: string;
   team: string;
   opponent: string;
   startsAt: string;
   status: "scheduled" | "live" | "final";
+  teamArtwork?: SportsTeamArtwork;
+  opponentArtwork?: SportsTeamArtwork;
   timeTbd?: boolean;
   home?: boolean;
   teamScore?: number;

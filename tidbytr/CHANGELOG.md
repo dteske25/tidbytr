@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.10.1
+
+- Use two team rows for upcoming games, live scores, and finals, with ESPN logos and right-aligned scores.
+- Show current-set points prominently during live volleyball with sets won below each abbreviation.
+- Download and cache logos in the background so scores can render while artwork loads.
+
 ## 0.10.0
 
 - Add six selectable college favorites across Nebraska, Iowa State, and Kansas.

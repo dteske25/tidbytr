@@ -2,39 +2,54 @@ import type { SportsGame } from "../core/panels.js";
 import type { PanelKind } from "../core/types.js";
 
 export function sportsDisplay(game: SportsGame, kind: PanelKind, now: Date, timeZone: string) {
-  const team = abbreviation(game.team, "HOME");
-  const opponent = abbreviation(game.opponent, "AWAY");
-  const sport = game.league === "football/college-football" ? "FB"
-    : game.league === "basketball/mens-college-basketball" ? "BB"
-    : game.league === "volleyball/womens-college-volleyball" ? "VB" : "";
-  const label = kind === "live-score" ? "LIVE" : kind === "final-score" ? "FINAL" : "NEXT";
-  const awayFirst = game.home === true;
-  const matchup = game.home === undefined ? `${team} VS ${opponent}`
-    : awayFirst ? `${opponent} @ ${team}` : `${team} @ ${opponent}`;
-  const period = game.period?.toUpperCase().replace(/[^A-Z0-9: -]/g, "").slice(0, 8).trimEnd() ?? "";
-  const setDetail = game.set && game.teamSetPoints !== undefined && game.opponentSetPoints !== undefined
-    ? `S${game.set} ${game.teamSetPoints}-${game.opponentSetPoints}`
-    : game.set ? `SET ${game.set}` : "";
-  return {
-    label, header: sport ? `${label} ${sport}` : label, sport,
-    team, opponent, matchup,
-    teamScore: game.teamScore === undefined ? "--" : String(game.teamScore),
-    opponentScore: game.opponentScore === undefined ? "--" : String(game.opponentScore),
-    detail: setDetail || period,
-    ...gameTime(game, now, timeZone),
+  const volleyball = game.league === "volleyball/womens-college-volleyball" || game.set !== undefined;
+  const liveVolleyball = kind === "live-score" && volleyball;
+  const upcoming = kind === "upcoming-game";
+  const team = {
+    name: abbreviation(game.team, "TEAM"),
+    artwork: game.teamArtwork,
+    score: upcoming ? "" : scoreText(liveVolleyball ? game.teamSetPoints : game.teamScore),
+    sets: liveVolleyball ? setCount(game.teamScore) : "",
   };
+  const opponent = {
+    name: abbreviation(game.opponent, "OPP"),
+    artwork: game.opponentArtwork,
+    score: upcoming ? "" : scoreText(liveVolleyball ? game.opponentSetPoints : game.opponentScore),
+    sets: liveVolleyball ? setCount(game.opponentScore) : "",
+  };
+
+  const sport = volleyball ? "VB"
+    : game.league === "football/college-football" || game.league === "football/nfl" ? "FB"
+    : game.league?.startsWith("basketball/") ? "BB"
+    : game.league === "baseball/mlb" ? "MLB"
+    : game.league === "hockey/nhl" ? "NHL" : "";
+  const liveStatus = liveVolleyball && game.set ? `SET ${game.set}`
+    : game.period?.toUpperCase().replace(/[^A-Z0-9: -]/g, "").trim();
+  const status = upcoming ? gameTime(game, now, timeZone)
+    : kind === "final-score" ? (volleyball ? "FINAL SETS" : "FINAL")
+    : liveStatus || "LIVE";
+  return { rows: game.home ? [opponent, team] : [team, opponent], sport, status };
 }
 
-function gameTime(game: SportsGame, now: Date, timeZone: string) {
+function gameTime(game: SportsGame, now: Date, timeZone: string): string {
   const startsAt = new Date(game.startsAt);
-  if (!Number.isFinite(startsAt.getTime())) return { day: "", time: "TBD" };
-  const formatDay = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone });
-  const day = formatDay.format(startsAt) === formatDay.format(now) ? "TODAY" : formatDay.format(startsAt).toUpperCase();
-  if (game.timeTbd) return { day, time: "TBD" };
+  if (!Number.isFinite(startsAt.getTime())) return "TBD";
+  const formatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone });
+  const date = formatter.format(startsAt).toUpperCase();
+  const day = date === formatter.format(now).toUpperCase() ? "" : date;
+  if (game.timeTbd) return [day, "TBD"].filter(Boolean).join(" ");
   const minutes = Math.ceil((startsAt.getTime() - now.getTime()) / 60_000);
-  if (minutes > 0 && minutes <= 60) return { day, time: `IN ${minutes} MIN` };
+  if (minutes > 0 && minutes <= 60) return `IN ${minutes} MIN`;
   const time = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone }).format(startsAt);
-  return { day, time };
+  return day ? `${day} ${time}` : time;
+}
+
+function scoreText(score?: number): string {
+  return score !== undefined && Number.isSafeInteger(score) && score >= 0 ? String(score) : "--";
+}
+
+function setCount(sets?: number): string {
+  return `${scoreText(sets)} ${sets === 1 ? "SET" : "SETS"}`;
 }
 
 function abbreviation(value: string | undefined, fallback: string): string {
