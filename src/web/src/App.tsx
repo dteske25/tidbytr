@@ -92,7 +92,7 @@ export function App() {
       <aside className="sidebar">
         <div>
           <div className="brand">Tidbytr</div>
-          <div className="version">v0.10.0</div>
+          <div className="version">v0.10.1</div>
         </div>
 
         <nav aria-label="Main navigation">

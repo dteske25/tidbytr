@@ -1,5 +1,5 @@
 import { COLLEGE_TEAMS } from "../core/college-teams.js";
-import type { SportsGame, SportsSnapshot } from "../core/panels.js";
+import type { SportsGame, SportsSnapshot, SportsTeamArtwork } from "../core/panels.js";
 import type { SourceHealth } from "../core/types.js";
 import { requestJson } from "./http.js";
 
@@ -22,7 +22,14 @@ interface EspnCompetitor {
   homeAway?: "home" | "away";
   score?: string | { value?: number; displayValue?: string };
   linescores?: Array<{ value?: number; displayValue?: string }>;
-  team?: { id?: string; abbreviation?: string; displayName?: string };
+  team?: {
+    id?: string;
+    abbreviation?: string;
+    displayName?: string;
+    color?: string;
+    logo?: string;
+    logos?: Array<{ href?: string; rel?: string[] }>;
+  };
 }
 
 interface EspnCompetition {
@@ -148,7 +155,12 @@ export class EspnSportsProvider {
         const { header } = await summary;
         const live = header && parseGame({ ...header, id: game.id, date: game.startsAt }, matches, team.league);
         if (!live || live.status === "scheduled") throw new Error("Game summary has no current scores");
-        return live;
+        return {
+          ...live,
+          home: live.home ?? game.home,
+          teamArtwork: { ...game.teamArtwork, ...live.teamArtwork },
+          opponentArtwork: { ...game.opponentArtwork, ...live.opponentArtwork },
+        };
       } catch (error) {
         errors.push(`${team.key}: ${error instanceof Error ? error.message : String(error)}`);
         return previous.find((old) => old.id === game.id && old.status === "live") ?? game;
@@ -183,6 +195,8 @@ function parseGame(event: EspnEvent, matches: (competitor: EspnCompetitor) => bo
   return {
     id: event.id ?? `${team}-${startsAt}`,
     team, opponent: opponent.team?.abbreviation ?? opponent.team?.displayName ?? "OPP", startsAt,
+    teamArtwork: teamArtwork(favorite.team),
+    opponentArtwork: teamArtwork(opponent.team),
     timeTbd: event.timeValid === false || competition?.timeValid === false || type?.shortDetail === "TBD",
     home: favorite.homeAway === "home" ? true : favorite.homeAway === "away" ? false : undefined,
     status: type?.completed ? "final" : inProgress ? "live" : "scheduled",
@@ -191,6 +205,14 @@ function parseGame(event: EspnEvent, matches: (competitor: EspnCompetitor) => bo
     teamSetPoints: set ? parseScore(favorite.linescores?.[set - 1]) : undefined,
     opponentSetPoints: set ? parseScore(opponent.linescores?.[set - 1]) : undefined,
   };
+}
+
+function teamArtwork(team: EspnCompetitor["team"]): SportsTeamArtwork | undefined {
+  const logo = team?.logos?.find(({ href, rel }) => href && rel?.includes("dark"))?.href
+    ?? team?.logo ?? team?.logos?.find(({ href }) => href)?.href;
+  const color = team?.color;
+  if (!logo && !color) return undefined;
+  return { ...(logo ? { logo } : {}), ...(color ? { color } : {}) };
 }
 
 function parseScore(score?: string | { value?: number; displayValue?: string }): number | undefined {

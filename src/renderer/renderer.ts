@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import type { FrameBundle, Panel, RuntimeConfig } from "../core/types.js";
 import type { SportsGame, WeatherAlert, WeatherSnapshot } from "../core/panels.js";
-import { sportsDisplay } from "./sports-display.js";
+import { renderScoreboard } from "./scoreboard.js";
 import { clockDisplay, babyAgeDisplay } from "./local-screens.js";
 import { starfieldFrames, STARFIELD_DELAY_MS } from "./starfield.js";
 import { weatherDisplay, WEATHER_FRAME_DELAY_MS } from "./weather.js";
@@ -48,7 +48,7 @@ export async function renderPanel(panel: Panel, now = new Date(), timeZone = "UT
     case "upcoming-game":
     case "live-score":
     case "final-score":
-      renderGame(canvas, sportsDisplay(panel.payload as SportsGame, panel.kind, now, timeZone), panel.kind);
+      renderScoreboard(canvas, panel.payload as SportsGame, panel.kind, now, timeZone);
       break;
     default:
       renderFallback(canvas, panel.title);
@@ -116,25 +116,6 @@ function renderForecast(canvas: PixelCanvas, forecast: NonNullable<WeatherSnapsh
   canvas.drawText(display.summary, 3, 18, hexColor("#CBD5DF"));
   canvas.drawText(display.high, 3, 25, hexColor("#FFD15C"));
   canvas.drawText(display.low, 35, 25, hexColor("#65BFFF"));
-}
-
-function renderGame(canvas: PixelCanvas, game: ReturnType<typeof sportsDisplay>, kind: Panel["kind"]): void {
-  const accent = kind === "live-score" ? COLORS.green : kind === "final-score" ? COLORS.blue : COLORS.yellow;
-  canvas.fillRect(0, 0, 64, 2, accent);
-  canvas.drawText(game.header, 2, 4, accent);
-  if (kind === "upcoming-game") {
-    canvas.drawText(game.day, 62 - canvas.measureText(game.day), 4, COLORS.muted);
-    canvas.drawText(game.matchup, Math.floor((64 - canvas.measureText(game.matchup)) / 2), 12, COLORS.white);
-    const scale = canvas.measureText(game.time, 2) <= 60 ? 2 : 1;
-    canvas.drawText(game.time, Math.floor((64 - canvas.measureText(game.time, scale)) / 2), 21, COLORS.white, scale);
-    return;
-  }
-  if (kind === "live-score") canvas.drawText(fitText(game.detail, 31), 32, 4, COLORS.muted);
-  canvas.drawText(game.team, 2, 11, COLORS.white);
-  canvas.drawText(game.opponent, 39, 11, COLORS.white);
-  canvas.drawText(game.teamScore, 5, 20, COLORS.white, 2);
-  canvas.drawText(game.opponentScore, 39, 20, COLORS.white, 2);
-  canvas.fillRect(29, 21, 6, 2, accent);
 }
 
 function renderFallback(canvas: PixelCanvas, title: string): void {

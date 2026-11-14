@@ -1,5 +1,3 @@
-import type { SportsGame } from "../core/panels.js";
-import { sportsDisplay } from "./sports-display.js";
 import { spawn } from "node:child_process";
 import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -28,9 +26,6 @@ const supportedPixletPanels = new Set<Panel["kind"]>([
   "baby-age",
   "forecast",
   "nws-alert",
-  "upcoming-game",
-  "live-score",
-  "final-score",
 ]);
 
 export class PixletRenderer implements DisplayRenderer {
@@ -49,6 +44,7 @@ export class PixletRenderer implements DisplayRenderer {
   }
 
   async render(panel: Panel, now: Date, config: RuntimeConfig): Promise<FrameBundle> {
+    // Sports and starfield use the same native renderer in both modes.
     if (!supportedPixletPanels.has(panel.kind)) {
       return this.fallbackRenderer.render(panel, now, config);
     }
@@ -132,10 +128,6 @@ function buildDisplayPayload(panel: Panel, now: Date, config: RuntimeConfig): Re
         message: `${alert.event ?? "NWS Alert"} ${alert.headline ?? ""}`.trim(),
       };
     }
-    case "upcoming-game":
-    case "live-score":
-    case "final-score":
-      return sportsDisplay(panel.payload as SportsGame, panel.kind, now, config.timezone);
     default:
       return {};
   }
