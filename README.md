@@ -34,7 +34,7 @@ You need a Gen 2 configured in the Tidbyt mobile app, its device ID/API key, Int
    quiet_hours_end: ""
    ```
 
-   Replace the credentials, location, timezone, and contact. Open **Favorite teams** in the dashboard to select college teams. Pro favorites accept NFL, NBA, MLB, and NHL abbreviations or full names. Clear the list to disable sports. Set both quiet-hour fields (for example `22:00` and `06:00`) to enable quiet hours.
+   Replace the credentials, location, timezone, and contact. Open **Screens → Sports → Favorite teams** to select college teams. Pro favorites accept NFL, NBA, MLB, and NHL abbreviations or full names. Use the sports switches to pause upcoming, live, or final screens while keeping your teams. Set both quiet-hour fields (for example `22:00` and `06:00`) to enable quiet hours.
 4. Save and start the add-on. Use **Open Web UI** through Home Assistant Ingress. Enable Start on boot if desired.
 5. Check cloud delivery reports **Accepted**, then check the physical device. Keep `installation_id` unchanged to update the same app. Other apps stay managed in the Tidbyt mobile app.
 
@@ -43,7 +43,7 @@ API acceptance confirms a server response, not physical display. Outbound HTTPS 
 ## Upgrade from 0.5 / HDK
 
 1. Back up the existing add-on and note its settings. If you flashed HDK, restore production firmware using [HDK's Back to Normal instructions](https://github.com/tidbyt/hdk#back-to-normal) for Gen 2. If already on stock firmware, no firmware change is needed. This server does not flash the device.
-2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.10.2**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
+2. Refresh/check for updates in the HA Add-on Store and update Tidbytr to **0.11.0**. HA builds from the versioned `tidbytr/source.tar.gz` bundle.
 3. Enter `tidbyt_api_token` and `tidbyt_device_id`, keeping your location, timezone, teams, and quiet hours.
 4. Remove the obsolete `display_base_url` option and any retained port 8788 mapping. Save and restart. The old `/current.webp` firmware feed is no longer served.
 5. Open the dashboard, check API acceptance, then try Show now and observe the actual device and animated weather app.
@@ -52,7 +52,7 @@ Saved screen priorities, provider caches, and ordinary settings are retained. No
 
 ## Dashboard and troubleshooting
 
-The dashboard separates the last API-accepted screen from the selected preview and next candidate. Show now requests immediate display and a one-minute Tidbytr selection hold; critical alerts can take precedence. Skip and Snooze immediately select replacement Tidbytr content. These actions do not suspend the device's other apps.
+**Display** separates the last image accepted by the Tidbyt API from the scheduler's prediction and your local preview. **Show on Tidbyt** requests immediate display with a one-minute hold. **Skip current** acts on the last sent screen. Enabled weather alerts can interrupt the hold. **Screens** has independent switches for clock, baby age, star flight, forecast, weather alerts, upcoming games, live scores, and finals. Child profiles and favorite teams stay saved when you turn a screen off. **Settings** contains rotation and quiet hours. **Diagnostics** shows delivery, source health, and activity.
 
 | Symptom | Check |
 | --- | --- |
@@ -107,7 +107,7 @@ The HA baseline options are `schedule_mode` (`clock-cycle` or `priority`), `cloc
 
 The 12-hour clock uses white time above a thin red divider and a centered white date below it.
 
-In **Personal screens**, use **Add child** for each child, enter their name and birth date, then choose **Boy · Blue**, **Girl · Pink**, or **Neutral · Green** and save. Remove all children to hide age screens. Names are abbreviated only on the display; full names remain in settings. Future birth dates are hidden until that local date. Up to 20 children are supported.
+Under **Screens → Everyday → Child profiles**, use **Add child** for each child, enter their name and birth date, then choose **Boy · Blue**, **Girl · Pink**, or **Neutral · Green** and save. Switch off **Baby age** to hide age screens and keep all profiles. Names are abbreviated only on the display; full names remain in settings. Future birth dates are hidden until that local date. Up to 20 children are supported.
 
 In clock-led mode, one child appears in each age slot, alternating across rounds: weather → first child → stars, then weather → second child → stars, with a 30-second clock between each 15-second screen. Age uses calendar months/days in the configured timezone, including month-end and leap-year anniversaries.
 

@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { DisplayRenderer } from "../src/renderer/types.js";
 import { LocalDisplayPublisher } from "../src/core/publisher.js";
+import { SCREENS } from "../src/core/screens.js";
 import { buildApp } from "../src/server/app.js";
 import { TidbytrStore } from "../src/storage/store.js";
 import { FakeCloudTransport, FakeRenderer, FakeSportsProvider, FakeWeatherProvider, testConfig } from "./helpers/fakes.js";
@@ -76,6 +77,53 @@ describe("api", () => {
     await app.close();
   });
 
+  it("toggles screens independently, blocks manual display, and keeps saved content", async () => {
+    const app = await makeApp({ starfieldEnabled: true, children: [{ id: "child", name: "Sam", birthDate: "2026-01-05", style: "neutral" }] });
+    const toggle = (kind: string, enabled: boolean) => app.inject({ method: "POST", url: "/api/actions/screen", payload: { kind, enabled } });
+    try {
+      await app.runtime.publish("baby-age-child");
+      expect((await toggle("baby-age", false)).statusCode).toBe(200);
+      let status = await app.runtime.getStatus();
+      expect(status.config.children).toHaveLength(1);
+      expect(status.scheduler.disabledKinds).toEqual(["baby-age"]);
+      expect(status.scheduler.manualHold).toBeNull();
+      expect((await app.runtime.getPanels()).map(({ kind }) => kind)).toContain("starfield");
+      expect((await app.inject({ method: "POST", url: "/api/actions/push", payload: { panelId: "baby-age-child" } })).statusCode).toBe(400);
+      expect((await toggle("baby-age", true)).statusCode).toBe(200);
+      expect((await app.runtime.getPanels()).map(({ kind }) => kind)).toContain("baby-age");
+      for (const { kind } of SCREENS) expect((await toggle(kind, false)).statusCode).toBe(200);
+      status = await app.runtime.getStatus();
+      expect(status.scheduler.nextPanel).toBeNull();
+      expect(status.display.currentPanel).toBeNull();
+      expect(app.transport.removals).toEqual(["tidbytrmain"]);
+      expect((await toggle("other", true)).statusCode).toBe(400);
+    } finally { await app.close(); }
+  });
+
+  it("previews the next slot while the current clock slot is still running", async () => {
+    const app = await makeApp({ screenPolicy: { mode: "clock-cycle" } });
+    try {
+      const now = new Date();
+      await app.runtime.setScreenEnabled("live-score", false, now);
+      const status = await app.runtime.getStatus(new Date(now.getTime() + 1000));
+      expect(status.display.currentPanel?.kind).toBe("clock");
+      expect(status.scheduler.nextPanel?.kind).toBe("forecast");
+    } finally { await app.close(); }
+  });
+
+  it("converts legacy source switches without enabling sibling screens", async () => {
+    const app = await makeApp({ starfieldEnabled: false });
+    try {
+      await app.runtime.setSourceEnabled("local", false);
+      await app.runtime.setScreenEnabled("starfield", true);
+      const status = await app.runtime.getStatus();
+      expect(status.config.starfieldEnabled).toBe(true);
+      expect(status.scheduler.disabledKinds).toContain("baby-age");
+      expect(status.scheduler.disabledKinds).not.toContain("starfield");
+      expect(status.scheduler.disabledSources).not.toContain("local");
+    } finally { await app.close(); }
+  });
+
   it("runs scheduled publishes in the background", async () => {
     const app = await makeApp({ schedulerIntervalSeconds: 15 });
 
@@ -142,6 +190,7 @@ describe("api", () => {
 
 async function makeApp(configOverrides = {}, renderer: DisplayRenderer = new FakeRenderer()) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "tidbytr-api-test-"));
+  const transport = new FakeCloudTransport();
   const app = await buildApp({
     // Seed provider data before starting the timer so initial refreshes cannot supersede the test render.
     startScheduler: false,
@@ -156,11 +205,11 @@ async function makeApp(configOverrides = {}, renderer: DisplayRenderer = new Fak
     }),
     publisher: new LocalDisplayPublisher({ dataDir }),
     renderer,
-    transport: new FakeCloudTransport(),
+    transport,
   });
   await app.runtime.refreshSources();
   if ("schedulerIntervalSeconds" in configOverrides) app.runtime.startScheduler();
-  return Object.assign(app, { dataDir });
+  return Object.assign(app, { dataDir, transport });
 }
 
 async function waitFor(predicate: () => boolean | Promise<boolean>, timeoutMs = 500): Promise<void> {

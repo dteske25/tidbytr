@@ -18,7 +18,7 @@ Each push attempt has a 4-second deadline, with up to three attempts and bounded
 
 ## Dashboard and API
 
-The dashboard shows last accepted content, latest push result, a separate selected preview, source health, decisions, and next selection. Status never claims device connectivity from an API response. Config/status omit the token and expose only `apiTokenConfigured`.
+Display shows last accepted content, a local preview, and the predicted next slot. Screens provides persistent per-screen switches. Settings contains rotation and quiet hours. Diagnostics contains delivery, sources, and activity. Status never claims device connectivity from an API response. Config/status omit the token and expose only `apiTokenConfigured`.
 
 - `GET /api/status`, `/api/config`, `/api/panels`: passive cached reads.
 - `GET /api/display/current.webp`: passive last accepted local preview, checked against its hash and current device/app target. It never pushes or counts as a device poll.
@@ -31,7 +31,7 @@ The dashboard shows last accepted content, latest push result, a separate select
 
 ## Local screens
 
-Clock uses 12-hour time without a leading zero. The date is centered beneath a one-pixel red divider. Personal screens configures a `children` list through `PUT /api/config`: each child has a stable `id`, `name`, `birthDate` (YYYY-MM-DD), and `style` (`boy`, `girl`, or `neutral`). Name/date are required; omitted styles default to neutral. IDs may be omitted on input and are generated from name/date; retain returned IDs on later edits. Duplicate IDs and invalid dates/styles are rejected; up to 20 children are supported. An explicit empty list disables age screens. Legacy `babyBirthDate`/`babyName` remain readable if no list is configured; saving a list clears those legacy fields. The UI supports add/edit/remove, per-child styles, and `starfieldEnabled`.
+Clock uses 12-hour time without a leading zero. The date is centered beneath a one-pixel red divider. Child profiles under Screens configures a `children` list through `PUT /api/config`: each child has a stable `id`, `name`, `birthDate` (YYYY-MM-DD), and `style` (`boy`, `girl`, or `neutral`). Name/date are required; omitted styles default to neutral. IDs may be omitted on input and are generated from name/date; retain returned IDs on later edits. Duplicate IDs and invalid dates/styles are rejected; up to 20 children are supported. An explicit empty list disables age screens. Legacy `babyBirthDate`/`babyName` remain readable if no list is configured; saving a list clears those legacy fields. The UI supports add/edit/remove and per-child styles. Baby age and Star flight have separate switches.
 
 Blue, pink, and green accents apply to the name, heart, and secondary text; the primary age stays high-contrast. Future birth dates omit that child's panel until the local birth date. A long name is abbreviated on the display while the full setting is preserved. Each child has its own panel ID and history. Clock-led age slots choose the least recently shown eligible child, giving one child a turn per round while retaining full clock gaps and the weather/stars cadence. Publication failures do not count as a turn. Quiet hours, source disabling, snooze, and manual holds still apply. In priority mode, children are independent candidates with the shared age priority/cooldown policy.
 
@@ -51,7 +51,7 @@ A persisted `cycleNextIndex` advances only after successful content publication.
 
 The timer wakes at slot/hold boundaries, as well as regular/minute refreshes, so 90/15 durations need not be multiples of the normal scheduler cadence. These are requested timings; API acceptance is not measured device exposure.
 
-The Rotation dashboard form edits mode/durations. `PUT /api/config` accepts partial top-level `screenPolicy` fields, preserving other fields. Existing saved policy objects default missing mode/duration fields to the new clock-led mode; old priority maps remain available. HA baseline uses `schedule_mode`, `clock_seconds`, and `screen_seconds`.
+The Rotation form under Settings edits mode/durations. `PUT /api/config` accepts partial top-level `screenPolicy` fields, preserving other fields. Existing saved policy objects default missing mode/duration fields to the new clock-led mode; old priority maps remain available. HA baseline uses `schedule_mode`, `clock_seconds`, and `screen_seconds`.
 
 ## Priority and freshness
 

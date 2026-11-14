@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.0
+
+- Organize the dashboard into Display, Screens, Settings, and Diagnostics.
+- Add persistent switches for each screen type, including clock, with settings retained when turned off.
+- Distinguish the last sent image, local preview, and predicted next selection. Skip targets the currently sent screen.
+
 ## 0.10.2
 
 - Keep the sport visible on upcoming matchups and display each team's season record and top-25 ranking when available.

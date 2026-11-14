@@ -1,450 +1,296 @@
-import {
-  Activity,
-  CalendarClock,
-  CheckCircle2,
-  Clock3,
-  CloudSun,
-  Gamepad2,
-  Gauge,
-  Monitor,
-  PauseCircle,
-  Play,
-  Settings,
-  SkipForward,
-  Sparkles,
-  Wifi,
-  XCircle,
-} from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Activity, ChevronRight, CloudSun, Gamepad2, Layers3, Monitor, Play, Settings, SkipForward, Sparkles, Timer } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { COLLEGE_TEAMS } from "../../core/college-teams.js";
-import type { Panel, SourceHealth, SourceId, TidbytrStatus } from "../../core/types.js";
+import { SCREENS, SCREEN_GROUPS } from "../../core/screens.js";
+import type { Panel, SanitizedConfig, TidbytrStatus } from "../../core/types.js";
 import { ChildrenForm } from "./ChildrenForm.js";
 import { apiUrl } from "./ingress.js";
 
-type LoadState = "loading" | "ready" | "error";
+const pages = [
+  { name: "Display", icon: Monitor },
+  { name: "Screens", icon: Layers3 },
+  { name: "Settings", icon: Settings },
+  { name: "Diagnostics", icon: Activity },
+] as const;
+type Page = typeof pages[number]["name"];
+type Save = (body: Record<string, unknown>) => Promise<void>;
+const groupIcons = [Sparkles, CloudSun, Gamepad2] as const;
 
-const nav = [
-  { label: "Display", icon: Monitor },
-  { label: "Sources", icon: Wifi },
-  { label: "Scheduler", icon: CalendarClock },
-  { label: "Settings", icon: Settings },
-];
-
-const sourceIcons: Record<SourceId, typeof CloudSun> = {
-  clock: Clock3,
-  nws: CloudSun,
-  sports: Gamepad2,
-  local: Sparkles,
-};
+function currentPage(): Page {
+  return pages.find(({ name }) => window.location.hash === `#${name.toLowerCase()}`)?.name ?? "Display";
+}
 
 export function App() {
-  const [status, setStatus] = useState<TidbytrStatus | null>(null);
-  const [panels, setPanels] = useState<Panel[]>([]);
-  const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [selectedPanelId, setSelectedPanelId] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-
+  const [page, setPage] = useState(currentPage);
+  const [data, setData] = useState<{ status: TidbytrStatus; panels: Panel[]; previewRevision: number }>();
+  const [offline, setOffline] = useState(false);
+  const [selectedId, setSelectedId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const refreshId = useRef(0);
+  const pending = useRef(false);
   const refresh = useCallback(async () => {
+    const id = ++refreshId.current;
     try {
-      const [statusResponse, panelsResponse] = await Promise.all([fetch(apiUrl("status")), fetch(apiUrl("panels"))]);
-      if (!statusResponse.ok || !panelsResponse.ok) {
-        throw new Error("API unavailable");
-      }
-      const nextStatus = (await statusResponse.json()) as TidbytrStatus;
-      const panelPayload = (await panelsResponse.json()) as { panels: Panel[] };
-      setStatus(nextStatus);
-      setPanels(panelPayload.panels);
-      setSelectedPanelId((current) => current ?? nextStatus.display.currentPanel?.id ?? panelPayload.panels[0]?.id ?? null);
-      setLoadState("ready");
-      setRefreshKey((key) => key + 1);
+      const responses = await Promise.all([fetch(apiUrl("status")), fetch(apiUrl("panels"))]);
+      if (responses.some((response) => !response.ok)) throw new Error("Dashboard unavailable");
+      const [status, { panels }] = await Promise.all(responses.map((response) => response.json()));
+      if (refreshId.current === id) { setData({ status, panels, previewRevision: id }); setOffline(false); }
     } catch {
-      setLoadState("error");
+      if (refreshId.current === id) setOffline(true);
     }
   }, []);
 
   useEffect(() => {
+    const navigate = () => setPage(currentPage());
+    window.addEventListener("hashchange", navigate);
     void refresh();
-    const timer = window.setInterval(() => void refresh(), 15_000);
-    return () => window.clearInterval(timer);
+    const timer = window.setInterval(() => { if (!pending.current) void refresh(); }, 15_000);
+    return () => { window.removeEventListener("hashchange", navigate); window.clearInterval(timer); };
   }, [refresh]);
 
-  const currentPanel = useMemo(
-    () => panels.find((panel) => panel.id === selectedPanelId) ?? status?.display.currentPanel ?? panels[0] ?? null,
-    [panels, selectedPanelId, status?.display.currentPanel],
-  );
-
-  const publishedPanel = status?.display.currentPanel;
   const act = async (path: string, body: Record<string, unknown>, method = "POST") => {
-    setActionError(null);
+    if (pending.current) return;
+    pending.current = true;
+    ++refreshId.current;
+    setBusy(true);
+    setError("");
     try {
       const response = await fetch(apiUrl(path), { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
-      if (!response.ok) {
-        const detail = await response.json() as { message?: string; error?: string };
-        throw new Error(detail.message ?? detail.error ?? "Action failed");
-      }
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message ?? result.error ?? "Action failed");
       await refresh();
-    } catch (error) { setActionError(error instanceof Error ? error.message : "Action failed"); }
+      if (path === "actions/push" && result.panel?.id !== body.panelId) throw new Error("A higher-priority screen took over.");
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Action failed");
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
   };
 
-  return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div>
-          <div className="brand">Tidbytr</div>
-          <div className="version">v0.10.2</div>
-        </div>
+  const status = data?.status;
+  const panels = data?.panels ?? [];
+  const selected = panels.find(({ id }) => id === selectedId);
+  const save: Save = (body) => act("config", body, "PUT");
+  const available = !offline && Boolean(status);
+  const delivery = !status?.display.configured ? "Setup required"
+    : status.scheduler.disabledKinds.length === SCREENS.length && !status.display.currentFrame ? "Screens off"
+    : status.display.apiAccepted ? "Cloud accepted"
+    : status.display.lastPublish ? "Delivery issue" : "Waiting for delivery";
 
-        <nav aria-label="Main navigation">
-          {nav.map((item, index) => {
-            const Icon = item.icon;
-            return (
-              <button className={index === 0 ? "nav-item active" : "nav-item"} key={item.label}>
-                <Icon size={18} />
-                <span>{item.label}</span>
-              </button>
-            );
-          })}
-        </nav>
+  return <div className="app-shell">
+    <header className="topbar">
+      <div className="brand"><span className="brand-mark"><Monitor size={20} /></span>Tidbytr</div>
+      <a className={`connection ${status?.display.apiAccepted && !offline ? "connected" : ""}`} href="#diagnostics">
+        <span aria-hidden="true" />{offline ? "Dashboard offline" : status ? delivery : "Connecting"}
+      </a>
+    </header>
+    <nav className="navigation" aria-label="Dashboard">
+      {pages.map(({ name, icon: Icon }) => <a key={name} href={`#${name.toLowerCase()}`} aria-current={page === name ? "page" : undefined}>
+        <Icon size={17} />{name}
+      </a>)}
+    </nav>
 
-        <div className="sidebar-status">
-          <StatusPair label="Server" value={loadState === "ready" ? "Running" : loadState} tone={loadState === "ready" ? "ok" : "warn"} />
-          <StatusPair label="TZ" value={status?.config.timezone ?? "Local"} />
-          <StatusPair label="Display" value="64x32" />
-          <StatusPair label="HA Ingress" value={isIngress() ? "Connected" : "Local"} tone="ok" />
-        </div>
-      </aside>
-
-      <main className="workspace">
-        <header className="topbar">
-          <div className="run-state">
-            <span className="live-dot" />
-            <strong>{!status?.display.configured ? "Configure Tidbyt API delivery" : status.display.apiAccepted ? "Tidbyt API accepted the last update" : "Waiting for a successful API push"}</strong>
-          </div>
-          <div className="topbar-metrics">
-            <span>Cloud delivery</span>
-            <b className={status?.display.apiAccepted ? "chip online" : "chip offline"}>{status?.display.apiAccepted ? "Accepted" : "Pending / failed"}</b>
-            <span>Last publish</span>
-            <b>{formatLastPublish(status)}</b>
-            <span>Next decision</span>
-            <b>{status ? `in ${status.scheduler.nextDecisionInSeconds}s` : "--"}</b>
-          </div>
-        </header>
-
-        <section className="main-grid">
-          <div className="display-column">
-            <section className="current-panel">
-              <div className="section-heading">
-                <div>
-                  <h1>Last accepted screen</h1>
-                  <p>{publishedPanel?.title ?? "No accepted screen"} · {status?.display.fresh ? "Fresh" : "Stale / waiting"}</p>
-                  <p>Next: {status?.scheduler.nextPanel?.title ?? "None"} · {status?.scheduler.nextReason}</p>
-                  {status?.display.degradedReason ? <p role="alert">Display fallback: {status.display.degradedReason}</p> : null}
-                  <p>{publishedPanel ? `Source: ${sourceLabel(publishedPanel.source)}` : "Source: none"}</p>
-                </div>
-                <div className="panel-meta">
-                  {status?.config.screenPolicy.mode === "clock-cycle" ? <span>Requested slot: {!publishedPanel ? "--" : publishedPanel.critical ? "Alert override" : publishedPanel.kind === "live-score" ? "Live game" : status.scheduler.manualHold && status.scheduler.manualHold.panelId === publishedPanel.id ? "Manual hold" : `${publishedPanel?.kind === "clock" ? status.config.screenPolicy.clockSeconds : status.config.screenPolicy.screenSeconds}s`}</span>
-                    : <span>Priority: {publishedPanel?.priority ?? "--"}</span>}
-                  <span>Slot: {panelKindLabel(publishedPanel?.kind)}</span>
-                  {status?.config.screenPolicy.mode === "priority" ? <span>Data validity: {publishedPanel ? `${publishedPanel.ttlSeconds}s` : "--"}</span> : null}
-                </div>
-              </div>
-
-              {status?.display.currentFrame ? <div className="preview-frame">
-                <img className="preview-image" alt="Last published screen" src={apiUrl(`display/current.webp?v=${refreshKey}`)} />
-              </div> : null}
-              <div className="preview-label">Selected preview: {currentPanel?.title ?? "None"} (64x32)</div>
-              <div className="preview-frame">
-                {currentPanel ? (
-                  <img
-                    alt={`${currentPanel.title} preview`}
-                    className="preview-image"
-                    src={apiUrl(`panels/${encodeURIComponent(currentPanel.id)}/preview.webp?v=${refreshKey}`)}
-                  />
-                ) : (
-                  <div className="preview-empty">NO PANEL</div>
-                )}
-              </div>
-
-              <PanelStrip panels={panels} selectedPanelId={currentPanel?.id ?? null} onSelect={setSelectedPanelId} />
-            </section>
-
-            <section className="decision-section">
-              <h2>Decision history</h2>
-              <div className="decision-table" role="table" aria-label="Decision history">
-                <div className="decision-row heading" role="row">
-                  <span>Time</span>
-                  <span>Decision</span>
-                  <span>Source</span>
-                  <span>Slot / Reason</span>
-                  <span>Result</span>
-                </div>
-                {(status?.decisions ?? []).slice(0, 8).map((decision) => (
-                  <div className="decision-row" role="row" key={decision.id}>
-                    <span>{formatTime(decision.decidedAt)}</span>
-                    <span className={`decision-${decision.result}`}>{decision.result}</span>
-                    <span>{decision.selectedPanelTitle ?? "Scheduler"}</span>
-                    <span>{decision.reason}</span>
-                    <span className="result-cell">
-                      {decision.result}
-                      {decision.result === "published" ? <CheckCircle2 size={15} /> : <PauseCircle size={15} />}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          </div>
-
-          <aside className="right-rail">
-            <section className="rail-section">
-              <h2>Source health</h2>
-              <div className="health-list">
-                {(status?.sourceHealth ?? fallbackHealth()).map((health) => (
-                  <HealthRow key={health.id} health={health} />
-                ))}
-              </div>
-            </section>
-
-            <section className="rail-section">
-              <h2>Actions</h2>
-              {actionError ? <p className="config-warning" role="alert">{actionError}</p> : null}
-              {status?.scheduler.manualHold ? <p>Selection held until {formatTime(status.scheduler.manualHold.until)}; critical alerts may interrupt Tidbytr.</p> : null}
-              <button className="primary-action" onClick={() => void act("actions/push", { panelId: currentPanel?.id })}>
-                <Play size={16} />
-                Show now
-              </button>
-              <div className="action-pair">
-                <button className="outline-action skip" onClick={() => void act("actions/skip", { panelId: currentPanel?.id })}>
-                  <SkipForward size={16} />
-                  Skip
+    <main className="workspace">
+      {error && <p className="notice error" role="alert">{error}</p>}
+      {offline && <div className="notice" role="status">Couldn’t reach Tidbytr. <button onClick={() => void refresh()}>Try again</button></div>}
+      {!status && !offline && <p role="status">Loading dashboard…</p>}
+      {status && <>
+        {page === "Display" && <section aria-labelledby="display-title">
+          <div className="page-title"><h1 id="display-title">Display</h1></div>
+          <div className="display-grid">
+            <section className="card display-card" aria-labelledby="sent-title">
+              <div className="card-heading"><h2 id="sent-title">Last sent</h2>{status.display.currentFrame && <span>{time(status.display.currentFrame.renderedAt, status.config.timezone)}</span>}</div>
+              <p className="screen-title">{status.display.currentPanel?.title ?? "No screen sent yet"}</p>
+              <ScreenImage src={status.display.currentFrame ? apiUrl(`display/current.webp?v=${encodeURIComponent(status.display.currentFrame.renderedAt)}`) : undefined}
+                alt="Last image accepted by the Tidbyt API" empty="Sent screens appear here" />
+              <div className="display-actions">
+                <button disabled={busy || !available || !status.display.currentPanel} onClick={() => void act("actions/skip", { panelId: status.display.currentPanel?.id })}>
+                  <SkipForward size={16} />Skip current
                 </button>
-                <button className="outline-action snooze" onClick={() => void act("actions/snooze", { minutes: 15 })}>
-                  <Clock3 size={16} />
-                  Snooze
-                </button>
+                <form className="snooze" onSubmit={(event) => {
+                  event.preventDefault();
+                  void act("actions/snooze", { minutes: Number(new FormData(event.currentTarget).get("minutes")) });
+                }}>
+                  <select name="minutes" aria-label="Snooze duration" defaultValue="15"><option value="5">5 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">1 hour</option></select>
+                  <button disabled={busy || !available} type="submit"><Timer size={16} />Snooze</button>
+                </form>
               </div>
-              <div className="snooze-grid" aria-label="Snooze duration">
-                {[5, 15, 30, 60].map((minutes) => (
-                  <button key={minutes} onClick={() => void act("actions/snooze", { minutes })}>
-                    {minutes === 60 ? "1h" : `${minutes}m`}
-                  </button>
-                ))}
-              </div>
+              {status.scheduler.snoozedUntil && Date.parse(status.scheduler.snoozedUntil) > Date.now() &&
+                <p className="action-note">Snoozed until {time(status.scheduler.snoozedUntil, status.config.timezone)}</p>}
+              {status.scheduler.manualHold && <p className="action-note">Showing manually until {time(status.scheduler.manualHold.until, status.config.timezone)}</p>}
+              {status.display.degradedReason && <p className="action-note" role="status">Fallback display · {status.display.degradedReason}</p>}
             </section>
-
-            {status ? <section className="rail-section">
-              <h2>Personal screens</h2>
-              <ChildrenForm key={JSON.stringify([status.config.children, status.config.babyBirthDate, status.config.babyName, status.config.starfieldEnabled])} config={status.config} onSave={(body) => act("config", body, "PUT")} />
-            </section> : null}
-
-            {status ? <section className="rail-section">
-              <h2>Favorite teams</h2>
-              <form key={JSON.stringify(status.config.favoriteTeams)} onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                const collegeTeams = data.getAll("collegeTeam").map(String);
-                const otherTeams = String(data.get("otherTeams") ?? "").split(",").map((team) => team.trim()).filter(Boolean);
-                void act("config", { favoriteTeams: [...collegeTeams, ...otherTeams] }, "PUT");
-              }}>
-                {COLLEGE_TEAMS.map(({ key, label }) => (
-                  <label className="policy-row" key={key}>{label}
-                    <input name="collegeTeam" type="checkbox" value={key} defaultChecked={status.config.favoriteTeams.some(
-                      (team) => [key.toUpperCase(), label.toUpperCase()].includes(team.toUpperCase()),
-                    )} />
-                  </label>
-                ))}
-                <label className="policy-row">Pro teams
-                  <input name="otherTeams" type="text" placeholder="KC, DEN" defaultValue={status.config.favoriteTeams.filter(
-                    (team) => !COLLEGE_TEAMS.some(({ key, label }) => [key.toUpperCase(), label.toUpperCase()].includes(team.toUpperCase())),
-                  ).join(", ")} />
-                </label>
-                <div className="action-pair">
-                  <button className="outline-action" type="button" onClick={(event) => {
-                    for (const input of event.currentTarget.form?.querySelectorAll<HTMLInputElement>('input[name="collegeTeam"]') ?? []) {
-                      input.checked = true;
-                    }
-                  }}>Select all college teams</button>
-                  <button className="outline-action" type="submit">Save favorite teams</button>
-                </div>
-              </form>
-            </section> : null}
-
-            {status ? <section className="rail-section">
-              <h2>Rotation</h2>
-              <p>Weather, baby age, stars, and sports each get a turn with clock in between. Live games pause the rotation. Score changes bring that game forward. Critical weather alerts take precedence.</p>
-              <form key={`rotation-${status.config.screenPolicy.mode}-${status.config.screenPolicy.clockSeconds}-${status.config.screenPolicy.screenSeconds}`} onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                void act("config", { screenPolicy: {
-                  mode: String(data.get("mode")), clockSeconds: Number(data.get("clockSeconds")), screenSeconds: Number(data.get("screenSeconds")),
-                } }, "PUT");
-              }}>
-                <label className="policy-row">Mode <select name="mode" aria-label="Scheduling mode" defaultValue={status.config.screenPolicy.mode}>
-                  <option value="clock-cycle">Clock-led cycle</option><option value="priority">Priority scheduling</option>
-                </select></label>
-                <label className="policy-row">Clock (seconds) <input name="clockSeconds" aria-label="Clock slot seconds" type="number" min="20" max="3600" required defaultValue={status.config.screenPolicy.clockSeconds} /></label>
-                <label className="policy-row">Other screens (seconds) <input name="screenSeconds" aria-label="Other screen slot seconds" type="number" min="10" max="120" required defaultValue={status.config.screenPolicy.screenSeconds} /></label>
-                <button className="outline-action" type="submit">Save rotation</button>
-              </form>
-              <p>Slot durations apply to the clock-led cycle. Priority mode uses priorities and cooldowns, including sports and ordinary advisories.</p>
-            </section> : null}
-
-            {status?.config.screenPolicy.mode === "priority" ? <section className="rail-section">
-              <h2>Screen priorities</h2>
-              <p>Higher priorities appear first. Cooldowns limit repeats. Live games stay on screen, and critical weather alerts take precedence.</p>
-              <form key={JSON.stringify(status.config.screenPolicy)} onSubmit={(event) => {
-                event.preventDefault();
-                const data = new FormData(event.currentTarget);
-                const policy = status.config.screenPolicy;
-                void act("config", { screenPolicy: {
-                  ...policy,
-                  minimumDwellSeconds: Number(data.get("dwell")),
-                  priorities: Object.fromEntries(Object.keys(policy.priorities).map((kind) => [kind, Number(data.get(`priority-${kind}`))])),
-                  cooldownSeconds: Object.fromEntries(Object.keys(policy.cooldownSeconds).map((kind) => [kind, Number(data.get(`cooldown-${kind}`))])),
-                } }, "PUT");
-              }}>
-                <label className="policy-row">Minimum screen time (seconds)
-                  <input name="dwell" aria-label="Minimum screen time" type="number" min="20" max="120" required defaultValue={status.config.screenPolicy.minimumDwellSeconds} />
-                </label>
-                {Object.keys(status.config.screenPolicy.priorities).filter((kind) => kind !== "clock").map((value) => {
-                  const kind = value as Panel["kind"];
-                  return <div className="policy-row" key={kind}>
-                    <span>{panelKindLabel(kind)}</span>
-                    <label>Priority <input aria-label={`${kind} priority`} name={`priority-${kind}`} type="number" min="0" max="100" required defaultValue={status.config.screenPolicy.priorities[kind]} /></label>
-                    <label>Repeat after (s) <input aria-label={`${kind} repeat cooldown`} name={`cooldown-${kind}`} type="number" min="20" max="3600" required defaultValue={status.config.screenPolicy.cooldownSeconds[kind]} /></label>
-                  </div>;
+            <section className="card display-card" aria-labelledby="preview-title">
+              <div className="card-heading"><h2 id="preview-title">Preview</h2><span>Local only</span></div>
+              <select className="screen-picker" aria-label="Screen to preview" value={selected?.id ?? ""} onChange={(event) => setSelectedId(event.target.value)}>
+                <option value="">Choose a screen</option>
+                {panels.map((panel) => <option key={panel.id} value={panel.id}>{panel.title}</option>)}
+              </select>
+              <ScreenImage src={selected ? apiUrl(`panels/${encodeURIComponent(selected.id)}/preview.webp?v=${data?.previewRevision}`) : undefined}
+                alt={selected ? `${selected.title} preview` : "Screen preview"} empty={panels.length ? "Choose a screen to preview" : "No screens available"} />
+              <div className="display-actions"><button className="primary" disabled={!available || busy || !selected} onClick={() => void act("actions/push", { panelId: selected?.id })}>
+                <Play size={16} />Show on Tidbyt
+              </button></div>
+            </section>
+          </div>
+          <section className="card up-next" aria-labelledby="next-title">
+            <div><h2 id="next-title">Up next</h2><p>{!status.scheduler.nextPanel ? "No screen scheduled"
+              : status.scheduler.nextPanel.id === status.display.currentPanel?.id && status.scheduler.nextPanel.kind === status.display.currentPanel?.kind
+                ? `Continuing ${status.scheduler.nextPanel.title}` : status.scheduler.nextPanel.title}</p></div>
+            <button disabled={!panels.some(({ id }) => id === status.scheduler.nextPanel?.id)} onClick={() => setSelectedId(status.scheduler.nextPanel?.id ?? "")}>Preview next<ChevronRight size={16} /></button>
+          </section>
+        </section>}
+        {page === "Screens" && <section aria-labelledby="screens-title">
+          <div className="page-title"><h1 id="screens-title">Screens</h1><p>Choose what appears on your Tidbyt.</p></div>
+          <div className="screen-grid">
+            {SCREEN_GROUPS.map(({ label, screens }, index) => {
+              const Icon = groupIcons[index]!;
+              return <section className="card screen-group" key={label}>
+                <h2><Icon size={19} />{label}</h2>
+                {screens.map(({ kind, label: screen }) => {
+                  const checked = !status.scheduler.disabledKinds.includes(kind);
+                  return <label className="switch-row" key={kind}>
+                    <span>{screen}</span>
+                    <input type="checkbox" role="switch" checked={checked} disabled={!available || busy}
+                      onChange={(event) => void act("actions/screen", { kind, enabled: event.target.checked })} />
+                  </label>;
                 })}
-                <input type="hidden" name="priority-clock" value={status.config.screenPolicy.priorities.clock} />
-                <input type="hidden" name="cooldown-clock" value="0" />
-                <button className="outline-action" type="submit">Save screen rules</button>
-              </form>
-            </section> : null}
-
-            <section className="rail-section">
-              <h2>Tidbyt API delivery</h2>
-              <div className="url-box">Device: {status?.config.tidbytDeviceId || "Not configured"}</div>
-              <p>App ID: {status?.config.installationId ?? "tidbytrmain"}</p>
-              {!status?.display.configured ? <p className="config-warning">Set tidbyt_api_token and tidbyt_device_id in the add-on configuration.</p> : null}
-              <p>{status?.config.screenPolicy.mode === "clock-cycle"
-                ? "Clock-led cycle requests immediate changes at slot boundaries. For closest timing, leave only Tidbytr enabled in the Tidbyt app rotation. Store apps and cloud delay can change physical screen time."
-                : "Scheduled updates share rotation with Store apps. Show now, critical alerts, and detected score changes request immediate display."} API acceptance does not confirm the physical display.</p>
-            </section>
-
-            <section className="rail-section">
-              <h2>Source toggles</h2>
-              <div className="toggle-list">
-                {(["clock", "nws", "sports", "local"] as SourceId[]).map((sourceId) => {
-                  const disabled = status?.scheduler.disabledSources.includes(sourceId) ?? false;
-                  return (
-                    <button
-                      disabled={sourceId === "clock"}
-                      className="toggle-row"
-                      key={sourceId}
-                      onClick={() => void act("actions/source", { sourceId, enabled: disabled })}
-                    >
-                      <span>{sourceLabel(sourceId)}</span>
-                      <span className={disabled ? "toggle" : "toggle on"} />
-                    </button>
-                  );
-                })}
-              </div>
-            </section>
-          </aside>
-        </section>
-      </main>
-    </div>
-  );
+                {label === "Everyday" && <Disclosure title="Child profiles">
+                  <ChildrenForm key={JSON.stringify([status.config.children, status.config.babyBirthDate, status.config.babyName])} config={status.config} onSave={save} />
+                </Disclosure>}
+                {label === "Sports" && <Disclosure title="Favorite teams">
+                  <FavoriteTeams key={JSON.stringify(status.config.favoriteTeams)} config={status.config} onSave={save} />
+                </Disclosure>}
+              </section>;
+            })}
+          </div>
+        </section>}
+        {page === "Settings" && <section aria-labelledby="settings-title">
+          <div className="page-title"><h1 id="settings-title">Settings</h1></div>
+          <div className="settings-grid">
+            <Rotation key={JSON.stringify(status.config.screenPolicy)} config={status.config} onSave={save} />
+            <QuietHours key={JSON.stringify(status.config.quietHours)} config={status.config} onSave={save} />
+          </div>
+        </section>}
+        {page === "Diagnostics" && <Diagnostics status={status} />}
+      </>}
+    </main>
+  </div>;
 }
 
-function PanelStrip({
-  panels,
-  selectedPanelId,
-  onSelect,
-}: {
-  panels: Panel[];
-  selectedPanelId: string | null;
-  onSelect: (panelId: string) => void;
-}) {
-  return (
-    <div className="panel-strip">
-      {panels.map((panel) => (
-        <button
-          className={panel.id === selectedPanelId ? "panel-token active" : "panel-token"}
-          key={panel.id}
-          onClick={() => onSelect(panel.id)}
-          title={panel.title}
-        >
-          <Gauge size={14} />
-          {panel.kind === "baby-age" ? panel.title : panelKindLabel(panel.kind)}
-        </button>
-      ))}
-    </div>
-  );
+function ScreenImage({ src, alt, empty }: { src?: string; alt: string; empty: string }) {
+  const [failed, setFailed] = useState("");
+  return <div className="screen-image">
+    {src && failed !== src ? <img src={src} alt={alt} onError={() => setFailed(src)} />
+      : <span>{src ? "Image unavailable" : empty}</span>}
+  </div>;
 }
 
-function HealthRow({ health }: { health: SourceHealth }) {
-  const Icon = sourceIcons[health.id] ?? Activity;
-  const StatusIcon = health.status === "ok" ? CheckCircle2 : health.status === "disabled" ? PauseCircle : XCircle;
-  return (
-    <div className="health-row">
-      <Icon size={19} />
-      <span>{health.label}</span>
-      <b className={`health-${health.status}`}>{health.status}</b>
-      <small>{formatTime(health.checkedAt)}</small>
-      <StatusIcon size={16} />
-    </div>
-  );
+function Disclosure({ title, children }: { title: string; children: ReactNode }) {
+  return <details className="disclosure"><summary>{title}</summary><div>{children}</div></details>;
 }
 
-function StatusPair({ label, value, tone }: { label: string; value: string; tone?: "ok" | "warn" }) {
-  return (
-    <div className="status-pair">
-      <span>{label}</span>
-      <b className={tone ? `tone-${tone}` : undefined}>{value}</b>
-    </div>
-  );
+function FavoriteTeams({ config, onSave }: { config: SanitizedConfig; onSave: Save }) {
+  const matches = (team: string, key: string, label: string) => [key.toUpperCase(), label.toUpperCase()].includes(team.toUpperCase());
+  const pro = config.favoriteTeams.filter((team) => !COLLEGE_TEAMS.some(({ key, label }) => matches(team, key, label)));
+  return <form onSubmit={(event) => {
+    event.preventDefault();
+    const values = new FormData(event.currentTarget);
+    const college = values.getAll("team").map(String);
+    const other = String(values.get("pro")).split(",").map((team) => team.trim()).filter(Boolean);
+    void onSave({ favoriteTeams: [...college, ...other] });
+  }}>
+    {COLLEGE_TEAMS.map(({ key, label }) => <label className="policy-row" key={key}>{label}
+      <input name="team" type="checkbox" value={key} defaultChecked={config.favoriteTeams.some((team) => matches(team, key, label))} />
+    </label>)}
+    <label className="policy-row">Pro teams<input name="pro" placeholder="KC, DEN" defaultValue={pro.join(", ")} /></label>
+    <div className="form-actions"><button type="button" onClick={(event) => {
+      for (const input of event.currentTarget.form?.querySelectorAll<HTMLInputElement>('input[name="team"]') ?? []) input.checked = true;
+    }}>Select all college teams</button><button className="primary" type="submit">Save teams</button></div>
+  </form>;
 }
 
-function fallbackHealth(): SourceHealth[] {
-  const checkedAt = new Date().toISOString();
-  return [
-    { id: "clock", label: "Clock baseline", status: "ok", checkedAt },
-    { id: "nws", label: "NWS weather", status: "degraded", checkedAt },
-    { id: "sports", label: "Favorite teams", status: "disabled", checkedAt },
-  ];
-}
-
-function sourceLabel(source: SourceId) {
-  return source === "nws" ? "NWS weather" : source === "sports" ? "Favorite teams" : source === "local" ? "Personal & ambient" : "Clock baseline";
-}
-
-function panelKindLabel(kind: Panel["kind"] | undefined) {
-  if (!kind) {
-    return "--";
+function Rotation({ config, onSave }: { config: SanitizedConfig; onSave: Save }) {
+  const policy = config.screenPolicy;
+  const [mode, setMode] = useState(policy.mode);
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const values = new FormData(event.currentTarget);
+    const screenPolicy = mode === "clock-cycle" ? {
+      mode, clockSeconds: Number(values.get("clock")), screenSeconds: Number(values.get("screen")),
+    } : {
+      mode, minimumDwellSeconds: Number(values.get("dwell")),
+      priorities: { ...policy.priorities, ...Object.fromEntries(SCREENS.filter(({ kind }) => kind !== "clock")
+        .map(({ kind }) => [kind, Number(values.get(`priority-${kind}`))])) },
+      cooldownSeconds: { ...policy.cooldownSeconds, ...Object.fromEntries(SCREENS.filter(({ kind }) => kind !== "clock")
+        .map(({ kind }) => [kind, Number(values.get(`repeat-${kind}`))])) },
+    };
+    void onSave({ screenPolicy });
   }
-
-  return kind
-    .split("-")
-    .map((part) => part[0]?.toUpperCase() + part.slice(1))
-    .join(" ");
+  return <section className="card settings-card"><h2>Rotation</h2><form onSubmit={submit}>
+    <label className="policy-row">Mode<select value={mode} onChange={(event) => setMode(event.target.value as typeof mode)}>
+      <option value="clock-cycle">Clock-led cycle</option><option value="priority">Priority scheduling</option>
+    </select></label>
+    {mode === "clock-cycle" ? <>
+      <label className="policy-row">Clock (seconds)<input name="clock" type="number" min="20" max="3600" required defaultValue={policy.clockSeconds} /></label>
+      <label className="policy-row">Other screens (seconds)<input name="screen" type="number" min="10" max="120" required defaultValue={policy.screenSeconds} /></label>
+    </> : <>
+      <label className="policy-row">Minimum display (seconds)<input name="dwell" type="number" min="20" max="120" required defaultValue={policy.minimumDwellSeconds} /></label>
+      <Disclosure title="Priority and repeat settings">
+        {SCREENS.filter(({ kind }) => kind !== "clock").map(({ kind, label }) => <fieldset key={kind}><legend>{label}</legend>
+          <label className="policy-row">Priority<input name={`priority-${kind}`} type="number" min="0" max="100" required defaultValue={policy.priorities[kind]} /></label>
+          <label className="policy-row">Repeat (seconds)<input name={`repeat-${kind}`} type="number" min="20" max="3600" required defaultValue={policy.cooldownSeconds[kind]} /></label>
+        </fieldset>)}
+      </Disclosure>
+    </>}
+    <button className="primary" type="submit">Save rotation</button>
+  </form></section>;
 }
 
-function formatTime(value: string) {
-  return new Intl.DateTimeFormat("en-US", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  }).format(new Date(value));
+function QuietHours({ config, onSave }: { config: SanitizedConfig; onSave: Save }) {
+  return <section className="card settings-card"><h2>Quiet hours</h2><p>{config.timezone}</p>
+    <form onSubmit={(event) => {
+      event.preventDefault();
+      const values = new FormData(event.currentTarget);
+      void onSave({ quietHours: values.has("enabled") ? { start: values.get("start"), end: values.get("end") } : null });
+    }}>
+      <label className="policy-row">Enabled<input name="enabled" type="checkbox" defaultChecked={Boolean(config.quietHours)} /></label>
+      <label className="policy-row">Start<input name="start" type="time" required defaultValue={config.quietHours?.start ?? "22:00"} /></label>
+      <label className="policy-row">End<input name="end" type="time" required defaultValue={config.quietHours?.end ?? "06:00"} /></label>
+      <button className="primary" type="submit">Save quiet hours</button>
+    </form>
+  </section>;
 }
 
-function formatLastPublish(status: TidbytrStatus | null) {
-  if (!status?.display.lastPublish) {
-    return "Never";
-  }
-
-  return status.display.lastPublish.ok ? "OK" : status.display.lastPublish.message;
+function Diagnostics({ status }: { status: TidbytrStatus }) {
+  const { display, config, scheduler } = status;
+  return <section aria-labelledby="diagnostics-title">
+    <div className="page-title"><h1 id="diagnostics-title">Diagnostics</h1></div>
+    <div className="settings-grid">
+      <section className="card settings-card"><h2>Delivery</h2>
+        {!display.configured && <p>Set the Tidbyt API token and device ID in Home Assistant’s add-on configuration.</p>}
+        <dl>
+          <div><dt>Device</dt><dd>{config.tidbytDeviceId || "Unconfigured"}</dd></div>
+          <div><dt>Installation</dt><dd>{config.installationId}</dd></div>
+          <div><dt>Last push</dt><dd>{display.lastPublish?.message ?? "None"}</dd></div>
+          <div><dt>Next decision</dt><dd>{scheduler.nextReason}</dd></div>
+        </dl>
+      </section>
+      <section className="card settings-card"><h2>Sources</h2>
+        <dl>{status.sourceHealth.map(({ id, label, status, detail }) => <div key={id}><dt>{label}</dt><dd>{status}{detail ? ` · ${detail}` : ""}</dd></div>)}</dl>
+      </section>
+    </div>
+    <section className="card log"><h2>Recent activity</h2>
+      {status.decisions.length ? <ul>{status.decisions.slice(0, 12).map((decision) => <li key={decision.id}>
+        <time dateTime={decision.decidedAt}>{time(decision.decidedAt, config.timezone)}</time>
+        <span>{decision.selectedPanelTitle ?? decision.reason}</span><small>{decision.result} · {decision.reason}</small>
+      </li>)}</ul> : <p>No activity yet.</p>}
+    </section>
+  </section>;
 }
 
-function isIngress() {
-  return window.location.pathname.includes("/api/hassio_ingress/");
+function time(value: string, timeZone: string) {
+  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone }).format(new Date(value));
 }

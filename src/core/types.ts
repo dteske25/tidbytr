@@ -134,6 +134,7 @@ export interface SchedulerState {
   snoozedUntil: string | null;
   skippedPanelIds: string[];
   disabledSources: SourceId[];
+  disabledKinds: PanelKind[];
   quietHours: QuietHours | null;
   history: Record<string, DisplayHistory>;
   showing: { panelId: string; startedAt: string; version: string; kind?: PanelKind; scoreInterrupt?: boolean } | null;
@@ -169,6 +170,7 @@ export interface TidbytrStatus {
     snoozedUntil: string | null;
     skippedPanelIds: string[];
     disabledSources: SourceId[];
+    disabledKinds: PanelKind[];
     nextDecisionInSeconds: number;
     nextPanel: Panel | null;
     nextReason: string;

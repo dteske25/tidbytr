@@ -11,6 +11,7 @@ export interface DisplayPushOptions {
 }
 export interface DisplayTransport {
   push(frame: FrameBundle, options: DisplayPushOptions): Promise<PublishResult>;
+  remove(options: Pick<DisplayPushOptions, "apiToken" | "deviceId" | "installationId">): Promise<void>;
 }
 export class TidbytCloudTransport implements DisplayTransport {
   private readonly fetchImpl: typeof fetch;
@@ -22,6 +23,17 @@ export class TidbytCloudTransport implements DisplayTransport {
     this.baseUrl = options.baseUrl ?? "https://api.tidbyt.com/v0";
     this.timeoutMs = options.timeoutMs ?? 4000;
     this.maxAttempts = options.maxAttempts ?? 3;
+  }
+  async remove({ apiToken, deviceId, installationId }: Pick<DisplayPushOptions, "apiToken" | "deviceId" | "installationId">): Promise<void> {
+    const status = await withDeadline(async () => {
+      const response = await this.fetchImpl(
+        `${this.baseUrl}/devices/${encodeURIComponent(deviceId)}/installations/${encodeURIComponent(installationId)}`,
+        { method: "DELETE", headers: { Authorization: `Bearer ${apiToken}` }, signal: AbortSignal.timeout(this.timeoutMs), redirect: "error" },
+      );
+      await response.body?.cancel();
+      return response.status;
+    }, this.timeoutMs);
+    if ((status < 200 || status >= 300) && status !== 404) throw new Error(`Tidbyt API returned HTTP ${status} while clearing the display`);
   }
   async push(frame: FrameBundle, options: DisplayPushOptions): Promise<PublishResult> {
     await validateDisplayFrame(frame);
