@@ -17,6 +17,19 @@ describe("Tidbyt API delivery", () => {
     expect(JSON.parse(String(requests[0]!.init?.body))).toEqual({ image: rendered.webp.toString("base64"), installationID: "tidbytrmain", background: true });
     expect(JSON.parse(String(requests[1]!.init?.body))).toMatchObject({ installationID: "tidbytrmain", background: false });
   });
+  it("removes only the configured installation and accepts an already absent installation", async () => {
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    const transport = new TidbytCloudTransport({ fetchImpl: async (url, init) => {
+      requests.push({ url: String(url), init });
+      return new Response(null, { status: 404 });
+    } });
+    await transport.remove(options);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      url: "https://api.tidbyt.com/v0/devices/device%2Fid/installations/tidbytrmain",
+      init: { method: "DELETE", headers: { Authorization: "Bearer secret-token" } },
+    });
+  });
   it("retries transient failures but not authentication errors, without exposing response bodies", async () => {
     let calls = 0;
     const transient = new TidbytCloudTransport({ fetchImpl: async () => new Response("secret-token", { status: ++calls < 3 ? 503 : 200 }) });

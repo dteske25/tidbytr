@@ -64,6 +64,8 @@ export class FakeRenderer implements DisplayRenderer {
 }
 
 export class FakeCloudTransport implements DisplayTransport {
+  removals: string[] = [];
+  async remove(options: Pick<DisplayPushOptions, "installationId">) { this.removals.push(options.installationId); }
   calls: Array<{ frame: FrameBundle; options: DisplayPushOptions }> = [];
   async push(frame: FrameBundle, options: DisplayPushOptions) {
     this.calls.push({ frame, options });

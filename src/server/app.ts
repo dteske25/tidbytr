@@ -5,6 +5,7 @@ import fastifyStatic from "@fastify/static";
 import Fastify from "fastify";
 import { z } from "zod";
 import { loadRuntimeConfig } from "../core/config.js";
+import { SCREENS } from "../core/screens.js";
 import type { SourceId } from "../core/types.js";
 import { TidbytrRuntime, type TidbytrRuntimeOptions } from "./runtime.js";
 
@@ -33,6 +34,11 @@ const snoozeBodySchema = z.object({
 
 const sourceBodySchema = z.object({
   sourceId: z.enum(["clock", "nws", "sports", "local"]),
+  enabled: z.boolean(),
+});
+
+const screenBodySchema = z.object({
+  kind: z.enum(SCREENS.map(({ kind }) => kind)),
   enabled: z.boolean(),
 });
 
@@ -132,6 +138,11 @@ export async function buildApp(options: BuildAppOptions = {}) {
   app.post("/api/actions/source", async (request) => {
     const body = sourceBodySchema.parse(request.body ?? {}) as { sourceId: SourceId; enabled: boolean };
     return runtime.setSourceEnabled(body.sourceId, body.enabled);
+  });
+
+  app.post("/api/actions/screen", async (request) => {
+    const { kind, enabled } = screenBodySchema.parse(request.body);
+    return runtime.setScreenEnabled(kind, enabled);
   });
 
   const staticRoot = path.join(process.cwd(), "dist", "web");

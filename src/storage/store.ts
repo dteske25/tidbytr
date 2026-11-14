@@ -76,6 +76,9 @@ export class TidbytrStore {
 
   getPublishedFrame(): PublishedFrame | null { return this.getJson<PublishedFrame>("published_frame"); }
   setPublishedFrame(frame: PublishedFrame): void { this.setJson("published_frame", frame); }
+  clearPublishedFrame(): void {
+    this.db.prepare("DELETE FROM kv WHERE key IN ('published_frame', 'last_publish')").run();
+  }
   getSnapshot<T>(source: string): T | null { return this.getJson<T>(`snapshot_${source}`); }
   setSnapshot<T>(source: string, snapshot: T): void { this.setJson(`snapshot_${source}`, snapshot); }
 

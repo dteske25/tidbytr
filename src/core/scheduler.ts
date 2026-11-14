@@ -26,6 +26,7 @@ export function defaultSchedulerState(quietHours = null as SchedulerState["quiet
     snoozedUntil: null,
     skippedPanelIds: [],
     disabledSources: [],
+    disabledKinds: [],
     quietHours,
     history: {},
     showing: null,
@@ -59,7 +60,7 @@ export function choosePanel(request: SchedulerRequest): SchedulerDecision {
   }
   const hold = request.state.manualHold;
   const manualId = request.manualPanelId ?? (hold && Date.parse(hold.until) > now.getTime() ? hold.panelId : undefined);
-  const manual = request.panels.find((panel) => panel.id === manualId && !isExpired(panel, now) && !request.state.disabledSources.includes(panel.source));
+  const manual = request.panels.find((panel) => panel.id === manualId && !isExpired(panel, now) && isScreenEnabled(panel, request.state));
   if (manual) return decision(now, manual, "Manual show requested", "selected", skipped);
   if (request.manualPanelId) skipped.push({ panelId: request.manualPanelId, reason: "Manual panel unavailable" });
   const live = eligible.filter((panel) => panel.kind === "live-score");
@@ -95,7 +96,7 @@ export function choosePanel(request: SchedulerRequest): SchedulerDecision {
       (now.getTime() - Date.parse(history[panel.id]?.lastShownAt ?? panel.createdAt)) / 1000));
     return score(b) - score(a) || a.id.localeCompare(b.id);
   });
-  const selected = sorted[0] ?? null;
+  const selected = sorted[0] ?? current ?? null;
   return decision(now, selected, selected ? selectionReason(selected) : "No eligible panels", selected ? "selected" : "not-shown", skipped);
 }
 
@@ -133,7 +134,7 @@ export function cycleRemainingMilliseconds(request: SchedulerRequest): number | 
   if (heldFor > 0) return heldFor;
   const showing = request.state.showing;
   const current = request.panels.find((panel) => panel.id === showing?.panelId);
-  if (!current || !showing || current.critical) return null;
+  if (!current || !showing || current.critical || !isScreenEnabled(current, request.state)) return null;
   const duration = current.kind === "live-score" ? (policy.mode === "clock-cycle" ? policy.screenSeconds : policy.minimumDwellSeconds)
     : policy.mode !== "clock-cycle" ? null
     : current.kind === "clock" ? policy.clockSeconds
@@ -233,9 +234,13 @@ export function setSourceEnabled(state: SchedulerState, sourceId: SourceId, enab
   };
 }
 
+export function isScreenEnabled(panel: Pick<Panel, "source" | "kind">, state: SchedulerState): boolean {
+  return !state.disabledSources.includes(panel.source) && !state.disabledKinds.includes(panel.kind);
+}
+
 function rejectionReason(panel: Panel, state: SchedulerState, now: Date, quietActive: boolean): string | null {
-  if (state.disabledSources.includes(panel.source)) {
-    return "Source disabled";
+  if (!isScreenEnabled(panel, state)) {
+    return "Screen disabled";
   }
 
   if (isExpired(panel, now)) {

@@ -5,8 +5,9 @@ import { normalizeOptions, sanitizeConfig } from "../core/config.js";
 import { buildPanels, clockPanel, type SportsGame, type SportsSnapshot, type WeatherSnapshot } from "../core/panels.js";
 import { LocalDisplayPublisher, validateDisplayFrame } from "../core/publisher.js";
 import { TidbytCloudTransport, type DisplayTransport } from "../core/transport.js";
-import { advanceClockCycle, clockCycleSlotIndex, LIVE_GAME_DISPLAY, SCORE_CHANGE_INTERRUPT, cycleRemainingMilliseconds, choosePanel, isExpired, markSkipped, recordShown, setSourceEnabled, snoozeUntil } from "../core/scheduler.js";
-import type { Panel, PublishedFrame, RuntimeConfig, SchedulerDecision, SourceHealth, SourceId, TidbytrStatus, SanitizedConfig } from "../core/types.js";
+import { advanceClockCycle, clockCycleSlotIndex, LIVE_GAME_DISPLAY, SCORE_CHANGE_INTERRUPT, cycleRemainingMilliseconds, choosePanel, isExpired, isScreenEnabled, markSkipped, recordShown, setSourceEnabled, snoozeUntil } from "../core/scheduler.js";
+import { SCREENS } from "../core/screens.js";
+import type { Panel, PanelKind, PublishedFrame, RuntimeConfig, SchedulerDecision, SourceHealth, SourceId, TidbytrStatus, SanitizedConfig } from "../core/types.js";
 import { createDefaultRenderer } from "../renderer/pixlet.js";
 import { SharpRenderer } from "../renderer/renderer.js";
 import type { DisplayRenderer } from "../renderer/types.js";
@@ -200,12 +201,21 @@ export class TidbytrRuntime {
     return job;
   }
 
-  async getPanels(now = new Date()): Promise<Panel[]> { return this.panels(now); }
+  async getPanels(now = new Date()): Promise<Panel[]> {
+    const state = this.state();
+    return this.panels(now).filter((panel) => isScreenEnabled(panel, state));
+  }
   async getPanel(panelId: string, now = new Date()): Promise<Panel | null> { return this.panels(now).find((panel) => panel.id === panelId) ?? null; }
   async getStatus(now = new Date()): Promise<TidbytrStatus> {
     const panels = this.panels(now);
     const state = this.state();
-    const next = choosePanel({ panels, now, state, policy: this.config.screenPolicy, timeZone: this.config.timezone });
+    const request = { panels, now, state, policy: this.config.screenPolicy, timeZone: this.config.timezone };
+    const next = choosePanel(request);
+    const remaining = cycleRemainingMilliseconds(request);
+    const nextAt = remaining && next.selectedPanelId === state.showing?.panelId
+      ? new Date(now.getTime() + remaining) : now;
+    const upcomingPanels = nextAt === now ? panels : this.panels(nextAt);
+    const scheduled = nextAt === now ? next : choosePanel({ ...request, now: nextAt, panels: upcomingPanels });
     const frame = this.store.getPublishedFrame();
     const lastPublish = this.store.getLastPublish();
     const configured = Boolean(this.config.tidbytApiToken && this.config.tidbytDeviceId);
@@ -227,8 +237,9 @@ export class TidbytrRuntime {
       decisions: this.store.getDecisions(),
       scheduler: {
         snoozedUntil: state.snoozedUntil, skippedPanelIds: state.skippedPanelIds, disabledSources: state.disabledSources,
+        disabledKinds: SCREENS.filter((screen) => !isScreenEnabled(screen, state)).map(({ kind }) => kind),
         nextDecisionInSeconds: this.nextSchedulerRunAt ? Math.max(0, Math.ceil((this.nextSchedulerRunAt - now.getTime()) / 1000)) : this.decisionInterval(),
-        nextPanel: panels.find((panel) => panel.id === next.selectedPanelId) ?? null, nextReason: next.reason,
+        nextPanel: upcomingPanels.find((panel) => panel.id === scheduled.selectedPanelId) ?? null, nextReason: scheduled.reason,
         manualHold: state.manualHold && Date.parse(state.manualHold.until) > now.getTime() ? state.manualHold : null,
       },
     };
@@ -249,7 +260,7 @@ export class TidbytrRuntime {
     const startedAt = performance.now();
     const generation = ++this.generation;
     const candidates = this.panels(now);
-    if (panelId && !candidates.some((panel) => panel.id === panelId && !isExpired(panel, now) && !this.state().disabledSources.includes(panel.source))) throw new Error("Requested panel is unavailable");
+    if (panelId && !candidates.some((panel) => panel.id === panelId && !isExpired(panel, now) && isScreenEnabled(panel, this.state()))) throw new Error("Requested panel is unavailable");
     const previousHold = this.state().manualHold;
     const reservedHold = panelId ? { panelId, until: new Date(now.getTime() + holdSeconds * 1000).toISOString() } : null;
     if (reservedHold) this.store.setSchedulerState({ ...this.state(), manualHold: reservedHold });
@@ -259,8 +270,11 @@ export class TidbytrRuntime {
     const decision = choosePanel({ panels: candidates, now, state: this.state(), manualPanelId: panelId, policy: this.config.screenPolicy, timeZone: this.config.timezone });
     let panel = candidates.find((panel) => panel.id === decision.selectedPanelId) ?? null;
     if (!panel) {
-      this.store.setSchedulerState({ ...this.state(), skippedPanelIds: [] });
-      this.store.addDecision(decision);
+      await this.clearDisplay(generation);
+      if (!this.closed && generation === this.generation) {
+        this.store.setSchedulerState({ ...this.state(), skippedPanelIds: [], showing: null });
+        this.store.addDecision(decision);
+      }
       return { decision, panel: null };
     }
     let degradedReason: string | undefined;
@@ -273,6 +287,13 @@ export class TidbytrRuntime {
       this.store.addDecision({ ...decision, result: "not-shown", reason: message(error) });
       if (panelId) { rollbackHold(); throw error; }
       degradedReason = message(error);
+      if (!isScreenEnabled({ kind: "clock", source: "clock" }, this.state())) {
+        const failedIndex = clockCycleSlotIndex(panel!.kind);
+        if (failedIndex >= 0 && this.config.screenPolicy.mode === "clock-cycle") {
+          this.store.setSchedulerState(advanceClockCycle(this.state(), failedIndex));
+        }
+        throw error;
+      }
       panel = clockPanel(now.toISOString(), this.config.timezone);
       frame = await this.fallback.render(panel, now, this.config);
     }
@@ -321,6 +342,26 @@ export class TidbytrRuntime {
     this.commitTail = commit.catch(() => undefined);
     return commit;
   }
+  private clearDisplay(generation: number): Promise<unknown> {
+    const clear = this.commitTail.then(async () => {
+      if (this.closed || generation !== this.generation) return;
+      const { tidbytApiToken: apiToken, tidbytDeviceId: deviceId, installationId } = this.config;
+      const targets = [this.store.getPublishedFrame(), this.store.getLastPublish()];
+      if (!apiToken || !deviceId || !targets.some((target) => target?.deviceId === deviceId && target.installationId === installationId)) return;
+      try {
+        await this.transport.remove({ apiToken, deviceId, installationId });
+        if (!this.closed) this.store.clearPublishedFrame();
+      } catch (error) {
+        if (!this.closed) this.store.addDecision({
+          id: randomUUID(), decidedAt: new Date().toISOString(), selectedPanelId: null,
+          selectedPanelTitle: null, reason: `Could not clear the display: ${message(error)}`, result: "not-shown", skipped: [],
+        });
+        throw error;
+      }
+    });
+    this.commitTail = clear.catch(() => undefined);
+    return clear;
+  }
   push(panelId?: string, now = new Date()) { return this.publish(panelId, now); }
   async getPublishedPreview(): Promise<Buffer | null> {
     const metadata = this.store.getPublishedFrame();
@@ -359,12 +400,44 @@ export class TidbytrRuntime {
     if (!this.stopped) void this.refreshSources(now);
     return decision;
   }
+  async setScreenEnabled(kind: PanelKind, enabled: boolean, now = new Date()): Promise<SchedulerDecision> {
+    const screen = SCREENS.find((entry) => entry.kind === kind);
+    if (!screen) throw new Error("Unknown screen");
+    const state = this.store.getSchedulerState(this.config.quietHours);
+    const disabledKinds = new Set(state.disabledKinds);
+    // Convert a legacy group switch to individual switches when that group is edited.
+    if (state.disabledSources.includes(screen.source)) {
+      for (const sibling of SCREENS.filter((entry) => entry.source === screen.source)) disabledKinds.add(sibling.kind);
+    }
+    if (enabled) disabledKinds.delete(kind);
+    else disabledKinds.add(kind);
+    if (kind === "starfield" && enabled && !this.config.starfieldEnabled) {
+      const next = { ...this.config, starfieldEnabled: true };
+      this.store.setOptions(next);
+      this.config = next;
+    }
+    this.store.setSchedulerState({
+      ...setSourceEnabled(state, screen.source, true),
+      disabledKinds: [...disabledKinds],
+      manualHold: this.panels(now).find((panel) => panel.id === state.manualHold?.panelId)?.kind === kind ? null : state.manualHold,
+    });
+    const decision = this.action(`${screen.label} ${enabled ? "enabled" : "disabled"}`, now);
+    await this.publish(undefined, now).catch((error: unknown) => this.logger?.warn({ error: message(error) }, "Screen preference saved; cloud update failed"));
+    if (enabled && state.disabledSources.includes(screen.source) && !this.stopped) void this.refreshSources(now);
+    return decision;
+  }
   private action(reason: string, now: Date, panelId: string | null = null): SchedulerDecision {
     const decision: SchedulerDecision = { id: randomUUID(), decidedAt: now.toISOString(), selectedPanelId: panelId, selectedPanelTitle: null, reason, result: "skipped", skipped: [] };
     this.store.addDecision(decision);
     return decision;
   }
-  private state() { return this.store.getSchedulerState(this.config.quietHours); }
+  private state() {
+    const state = this.store.getSchedulerState(this.config.quietHours);
+    if (!this.config.starfieldEnabled && !state.disabledKinds.includes("starfield")) {
+      return { ...state, disabledKinds: [...state.disabledKinds, "starfield" as const] };
+    }
+    return state;
+  }
   private panels(now: Date): Panel[] {
     return buildPanels(this.config, { ...this.weather, forecast: this.weather.forecastObservedAt ? this.weather.forecast : null, alerts: this.weather.alertsObservedAt ? this.weather.alerts : [] },
       { games: this.sports.games.filter((game) => game.observedAt && Number.isFinite(Date.parse(game.observedAt))) }, now);
