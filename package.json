@@ -1,6 +1,6 @@
 {
   "name": "tidbytr",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "type": "module",
   "description": "Tidbyt stock-firmware API app with a local scheduler and Home Assistant add-on.",

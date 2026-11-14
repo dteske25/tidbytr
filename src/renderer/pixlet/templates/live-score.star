@@ -6,9 +6,9 @@ def main(config):
     display = data.get("display") or {}
     team = display.get("team") or "HOME"
     opponent = display.get("opponent") or "AWAY"
-    team_score = display.get("teamScore") or "0"
-    opponent_score = display.get("opponentScore") or "0"
-    detail = display.get("detail") or "LIVE"
+    team_score = display.get("teamScore") or "--"
+    opponent_score = display.get("opponentScore") or "--"
+    detail = display.get("detail") or ""
 
     return render.Root(
         child = render.Stack(
@@ -16,11 +16,11 @@ def main(config):
                 render.Box(width = 64, height = 2, color = "#0f5"),
                 render.Padding(
                     pad = (2, 3, 0, 0),
-                    child = render.Text(content = "LIVE", color = "#0f5"),
+                    child = render.Text(content = display.get("header") or "LIVE", font = "tom-thumb" if display.get("sport") else "tb-8", color = "#0f5"),
                 ),
                 render.Padding(
-                    pad = (31, 3, 0, 0),
-                    child = render.Text(content = detail, color = "#999"),
+                    pad = (32, 4, 0, 0),
+                    child = render.Text(content = detail, font = "tom-thumb", color = "#CBD5DF"),
                 ),
                 render.Padding(
                     pad = (2, 11, 0, 0),
@@ -35,7 +35,7 @@ def main(config):
                     child = render.Text(content = team_score, font = "6x13", color = "#fff"),
                 ),
                 render.Padding(
-                    pad = (44, 20, 0, 0),
+                    pad = (43, 20, 0, 0),
                     child = render.Text(content = opponent_score, font = "6x13", color = "#fff"),
                 ),
                 render.Padding(

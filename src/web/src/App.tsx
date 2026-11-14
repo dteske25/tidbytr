@@ -16,6 +16,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { COLLEGE_TEAMS } from "../../core/college-teams.js";
 import type { Panel, SourceHealth, SourceId, TidbytrStatus } from "../../core/types.js";
 import { ChildrenForm } from "./ChildrenForm.js";
 import { apiUrl } from "./ingress.js";
@@ -91,7 +92,7 @@ export function App() {
       <aside className="sidebar">
         <div>
           <div className="brand">Tidbytr</div>
-          <div className="version">v0.9.0</div>
+          <div className="version">v0.10.0</div>
         </div>
 
         <nav aria-label="Main navigation">
@@ -142,7 +143,7 @@ export function App() {
                   <p>{publishedPanel ? `Source: ${sourceLabel(publishedPanel.source)}` : "Source: none"}</p>
                 </div>
                 <div className="panel-meta">
-                  {status?.config.screenPolicy.mode === "clock-cycle" ? <span>Requested slot: {!publishedPanel ? "--" : publishedPanel.critical ? "Alert override" : status.scheduler.manualHold && status.scheduler.manualHold.panelId === publishedPanel.id ? "Manual hold" : `${publishedPanel?.kind === "clock" ? status.config.screenPolicy.clockSeconds : status.config.screenPolicy.screenSeconds}s`}</span>
+                  {status?.config.screenPolicy.mode === "clock-cycle" ? <span>Requested slot: {!publishedPanel ? "--" : publishedPanel.critical ? "Alert override" : publishedPanel.kind === "live-score" ? "Live game" : status.scheduler.manualHold && status.scheduler.manualHold.panelId === publishedPanel.id ? "Manual hold" : `${publishedPanel?.kind === "clock" ? status.config.screenPolicy.clockSeconds : status.config.screenPolicy.screenSeconds}s`}</span>
                     : <span>Priority: {publishedPanel?.priority ?? "--"}</span>}
                   <span>Slot: {panelKindLabel(publishedPanel?.kind)}</span>
                   {status?.config.screenPolicy.mode === "priority" ? <span>Data validity: {publishedPanel ? `${publishedPanel.ttlSeconds}s` : "--"}</span> : null}
@@ -237,8 +238,40 @@ export function App() {
             </section> : null}
 
             {status ? <section className="rail-section">
+              <h2>Favorite teams</h2>
+              <form key={JSON.stringify(status.config.favoriteTeams)} onSubmit={(event) => {
+                event.preventDefault();
+                const data = new FormData(event.currentTarget);
+                const collegeTeams = data.getAll("collegeTeam").map(String);
+                const otherTeams = String(data.get("otherTeams") ?? "").split(",").map((team) => team.trim()).filter(Boolean);
+                void act("config", { favoriteTeams: [...collegeTeams, ...otherTeams] }, "PUT");
+              }}>
+                {COLLEGE_TEAMS.map(({ key, label }) => (
+                  <label className="policy-row" key={key}>{label}
+                    <input name="collegeTeam" type="checkbox" value={key} defaultChecked={status.config.favoriteTeams.some(
+                      (team) => [key.toUpperCase(), label.toUpperCase()].includes(team.toUpperCase()),
+                    )} />
+                  </label>
+                ))}
+                <label className="policy-row">Pro teams
+                  <input name="otherTeams" type="text" placeholder="KC, DEN" defaultValue={status.config.favoriteTeams.filter(
+                    (team) => !COLLEGE_TEAMS.some(({ key, label }) => [key.toUpperCase(), label.toUpperCase()].includes(team.toUpperCase())),
+                  ).join(", ")} />
+                </label>
+                <div className="action-pair">
+                  <button className="outline-action" type="button" onClick={(event) => {
+                    for (const input of event.currentTarget.form?.querySelectorAll<HTMLInputElement>('input[name="collegeTeam"]') ?? []) {
+                      input.checked = true;
+                    }
+                  }}>Select all college teams</button>
+                  <button className="outline-action" type="submit">Save favorite teams</button>
+                </div>
+              </form>
+            </section> : null}
+
+            {status ? <section className="rail-section">
               <h2>Rotation</h2>
-              <p>Clock → Weather → Clock → Baby age → Clock → Stars. Each age slot shows the next child. Disabled or unavailable screens are skipped; critical alerts can interrupt.</p>
+              <p>Weather, baby age, stars, and sports each get a turn with clock in between. Live games pause the rotation. Score changes bring that game forward. Critical weather alerts take precedence.</p>
               <form key={`rotation-${status.config.screenPolicy.mode}-${status.config.screenPolicy.clockSeconds}-${status.config.screenPolicy.screenSeconds}`} onSubmit={(event) => {
                 event.preventDefault();
                 const data = new FormData(event.currentTarget);
@@ -258,7 +291,7 @@ export function App() {
 
             {status?.config.screenPolicy.mode === "priority" ? <section className="rail-section">
               <h2>Screen priorities</h2>
-              <p>Higher priorities appear first. Cooldowns limit repeats; critical alerts may interrupt.</p>
+              <p>Higher priorities appear first. Cooldowns limit repeats. Live games stay on screen, and critical weather alerts take precedence.</p>
               <form key={JSON.stringify(status.config.screenPolicy)} onSubmit={(event) => {
                 event.preventDefault();
                 const data = new FormData(event.currentTarget);
@@ -294,7 +327,7 @@ export function App() {
               {!status?.display.configured ? <p className="config-warning">Set tidbyt_api_token and tidbyt_device_id in the add-on configuration.</p> : null}
               <p>{status?.config.screenPolicy.mode === "clock-cycle"
                 ? "Clock-led cycle requests immediate changes at slot boundaries. For closest timing, leave only Tidbytr enabled in the Tidbyt app rotation. Store apps and cloud delay can change physical screen time."
-                : "Scheduled updates share rotation with Store apps. Show now and critical alerts request immediate display."} API acceptance does not confirm the physical display.</p>
+                : "Scheduled updates share rotation with Store apps. Show now, critical alerts, and detected score changes request immediate display."} API acceptance does not confirm the physical display.</p>
             </section>
 
             <section className="rail-section">

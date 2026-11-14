@@ -2,10 +2,10 @@ import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import type { FastifyBaseLogger } from "fastify";
 import { normalizeOptions, sanitizeConfig } from "../core/config.js";
-import { buildPanels, clockPanel, type SportsSnapshot, type WeatherSnapshot } from "../core/panels.js";
+import { buildPanels, clockPanel, type SportsGame, type SportsSnapshot, type WeatherSnapshot } from "../core/panels.js";
 import { LocalDisplayPublisher, validateDisplayFrame } from "../core/publisher.js";
 import { TidbytCloudTransport, type DisplayTransport } from "../core/transport.js";
-import { CLOCK_CYCLE_KINDS, cycleRemainingMilliseconds, choosePanel, isExpired, markSkipped, recordShown, setSourceEnabled, snoozeUntil } from "../core/scheduler.js";
+import { advanceClockCycle, clockCycleSlotIndex, LIVE_GAME_DISPLAY, SCORE_CHANGE_INTERRUPT, cycleRemainingMilliseconds, choosePanel, isExpired, markSkipped, recordShown, setSourceEnabled, snoozeUntil } from "../core/scheduler.js";
 import type { Panel, PublishedFrame, RuntimeConfig, SchedulerDecision, SourceHealth, SourceId, TidbytrStatus, SanitizedConfig } from "../core/types.js";
 import { createDefaultRenderer } from "../renderer/pixlet.js";
 import { SharpRenderer } from "../renderer/renderer.js";
@@ -164,12 +164,17 @@ export class TidbytrRuntime {
           };
           this.store.setSnapshot(source, this.weather);
         } else {
-          const previous = this.sports;
-          this.sports = { games: (result.snapshot as SportsSnapshot).games.map((game) => ({
-            ...game,
-            observedAt: game.observedAt ?? (result.health.status === "ok" ? now.toISOString() : previous.games.find((old) => old.id === game.id)?.observedAt),
-            completedAt: game.status === "final" ? previous.games.find((old) => old.id === game.id)?.completedAt ?? game.completedAt ?? now.toISOString() : undefined,
-          })) };
+          const previous = this.sports.games;
+          this.sports = { games: (result.snapshot as SportsSnapshot).games.map((game) => {
+            const old = previous.find((candidate) => candidate.id === game.id && candidate.league === game.league);
+            const observedAt = game.observedAt ?? (result.health.status === "ok" ? now.toISOString() : old?.observedAt);
+            return {
+              ...game,
+              observedAt,
+              completedAt: game.status === "final" ? old?.completedAt ?? game.completedAt ?? now.toISOString() : undefined,
+              scoreChangedAt: old && observedAt && Date.parse(observedAt) > Date.parse(old.observedAt ?? "") && scoreChanged(old, game) ? observedAt : old?.scoreChangedAt,
+            };
+          }) };
           this.store.setSnapshot(source, this.sports);
         }
         this.health.set(source, { ...result.health, lastSuccessAt: result.health.lastSuccessAt ?? (result.health.status === "ok" ? now.toISOString() : this.health.get(source)?.lastSuccessAt) });
@@ -273,6 +278,7 @@ export class TidbytrRuntime {
     }
     const selected = panel;
     const rendered = frame;
+    const scoreInterrupted = !degradedReason && decision.reason === SCORE_CHANGE_INTERRUPT;
     const commit = this.commitTail.then(async () => {
       if (this.closed || generation !== this.generation || isExpired(selected, new Date(now.getTime() + performance.now() - startedAt))) return { decision: { ...decision, result: "not-shown" as const, reason: "Superseded render" }, panel: null };
       try {
@@ -281,7 +287,8 @@ export class TidbytrRuntime {
           apiToken: this.config.tidbytApiToken, deviceId: this.config.tidbytDeviceId,
           installationId: this.config.installationId,
           isCurrent: () => !this.closed && generation === this.generation && !isExpired(selected, new Date(now.getTime() + performance.now() - startedAt)),
-          background: !selected.critical && !panelId && !(hold && Date.parse(hold.until) > now.getTime())
+          background: !selected.critical && !scoreInterrupted && !panelId
+            && !(decision.reason === LIVE_GAME_DISPLAY && (this.state().showing?.panelId !== selected.id || this.state().showing?.kind !== selected.kind)) && !(hold && Date.parse(hold.until) > now.getTime())
             && !(this.config.screenPolicy.mode === "clock-cycle" && this.state().showing?.panelId !== selected.id),
         });
         this.store.setLastPublish(result);
@@ -293,11 +300,11 @@ export class TidbytrRuntime {
           delivery: "tidbyt-cloud", deviceId: result.deviceId, installationId: result.installationId,
           validUntil: new Date(Math.min(Date.parse(selected.expiresAt), now.getTime() + 60_000)).toISOString(),
           sha256: createHash("sha256").update(rendered.webp).digest("hex"), degradedReason });
-        let state = recordShown(this.state(), selected, now, this.config.screenPolicy);
+        let state = recordShown(this.state(), selected, now, this.config.screenPolicy, scoreInterrupted);
         if (degradedReason && this.config.screenPolicy.mode === "clock-cycle") {
           const failedKind = candidates.find((candidate) => candidate.id === decision.selectedPanelId)?.kind;
-          const failedIndex = failedKind ? CLOCK_CYCLE_KINDS.indexOf(failedKind) : -1;
-          if (failedIndex >= 0) state = { ...state, cycleNextIndex: (failedIndex + 1) % CLOCK_CYCLE_KINDS.length,
+          const failedIndex = failedKind && decision.reason !== SCORE_CHANGE_INTERRUPT ? clockCycleSlotIndex(failedKind) : -1;
+          if (failedIndex >= 0) state = { ...advanceClockCycle(state, failedIndex),
             showing: { panelId: selected.id, startedAt: now.toISOString(), version: selected.version ?? "" }, manualHold: null };
         }
         if (panelId && selected.id === panelId && !degradedReason) state = { ...state, manualHold: { panelId, until: new Date(now.getTime() + holdSeconds * 1000).toISOString() } };
@@ -385,4 +392,19 @@ export class TidbytrRuntime {
     }, delayMs);
   }
 }
+function scoreChanged(previous: SportsGame, current: SportsGame): boolean {
+  if (current.status === "scheduled" || previous.status === "final" && current.status === "live") return false;
+  const sameOrientation = previous.team === current.team;
+  const previousTeamScore = sameOrientation ? previous.teamScore : previous.opponentScore;
+  const previousOpponentScore = sameOrientation ? previous.opponentScore : previous.teamScore;
+  // Scheduled games may omit their scores. A game going live at zero is a normal rotation update.
+  const changed = (before?: number, after?: number) => after !== undefined && before !== after &&
+    (before !== undefined || previous.status === "scheduled" && after > 0);
+  if (changed(previousTeamScore, current.teamScore) || changed(previousOpponentScore, current.opponentScore)) return true;
+  if (current.set === undefined || current.status !== "live") return false;
+  if (current.set !== previous.set) return (current.teamSetPoints ?? 0) > 0 || (current.opponentSetPoints ?? 0) > 0;
+  return changed(sameOrientation ? previous.teamSetPoints : previous.opponentSetPoints, current.teamSetPoints) ||
+    changed(sameOrientation ? previous.opponentSetPoints : previous.teamSetPoints, current.opponentSetPoints);
+}
+
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }

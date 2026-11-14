@@ -1,3 +1,5 @@
+import type { SportsGame } from "../core/panels.js";
+import { sportsDisplay } from "./sports-display.js";
 import { spawn } from "node:child_process";
 import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -132,45 +134,11 @@ function buildDisplayPayload(panel: Panel, now: Date, config: RuntimeConfig): Re
     }
     case "upcoming-game":
     case "live-score":
-    case "final-score": {
-      const game = panel.payload as {
-        team?: string;
-        opponent?: string;
-        startsAt?: string;
-        status?: string;
-        teamScore?: number;
-        opponentScore?: number;
-        period?: string;
-      };
-      return {
-        label: panel.kind === "live-score" ? "LIVE" : panel.kind === "final-score" ? "FINAL" : "NEXT",
-        team: game.team ?? "HOME",
-        opponent: game.opponent ?? "AWAY",
-        teamScore: String(game.teamScore ?? 0),
-        opponentScore: String(game.opponentScore ?? 0),
-        detail: game.period ?? (game.startsAt ? formatGameTime(game.startsAt, config.timezone) : "TBD"),
-      };
-    }
+    case "final-score":
+      return sportsDisplay(panel.payload as SportsGame, panel.kind, now, config.timezone);
     default:
       return {};
   }
-}
-
-function formatGameTime(value: string, timezone: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "TBD";
-  }
-
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "2-digit",
-    hour: "numeric",
-    timeZone: timezone,
-  })
-    .format(date)
-    .toUpperCase()
-    .replace(",", "");
 }
 
 export class SpawnPixletRunner implements PixletProcessRunner {
