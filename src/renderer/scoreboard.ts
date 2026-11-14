@@ -17,8 +17,14 @@ export function renderScoreboard(canvas: PixelCanvas, game: SportsGame, kind: Pa
     if (logo) drawLogo(canvas, logo, 3, y);
     else canvas.fillRect(3, y + 2, 2, 7, identity);
 
-    canvas.drawText(row.name, 17, y + (row.sets ? 0 : 3), logo ? COLORS.ink : identity);
-    if (row.sets) canvas.drawText(row.sets, 17, y + 6, COLORS.muted);
+    const detail = row.sets || row.standing?.record || "";
+    const nameY = y + (detail ? 0 : 3);
+    canvas.drawText(row.name, 17, nameY, logo ? COLORS.ink : identity);
+    if (detail) canvas.drawText(detail, 17, y + 6, COLORS.muted);
+    if (row.standing?.rank) {
+      const rank = `#${row.standing.rank}`;
+      canvas.drawText(rank, 61 - canvas.measureText(rank), nameY, accent);
+    }
     const scale = canvas.measureText(row.score, 2) <= 26 ? 2 : 1;
     canvas.drawText(row.score, 61 - canvas.measureText(row.score, scale), y + (scale === 2 ? 1 : 3), COLORS.white, scale);
   }

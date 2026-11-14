@@ -10,12 +10,14 @@ export function sportsDisplay(game: SportsGame, kind: PanelKind, now: Date, time
     artwork: game.teamArtwork,
     score: upcoming ? "" : scoreText(liveVolleyball ? game.teamSetPoints : game.teamScore),
     sets: liveVolleyball ? setCount(game.teamScore) : "",
+    standing: upcoming ? game.teamStanding : undefined,
   };
   const opponent = {
     name: abbreviation(game.opponent, "OPP"),
     artwork: game.opponentArtwork,
     score: upcoming ? "" : scoreText(liveVolleyball ? game.opponentSetPoints : game.opponentScore),
     sets: liveVolleyball ? setCount(game.opponentScore) : "",
+    standing: upcoming ? game.opponentStanding : undefined,
   };
 
   const sport = volleyball ? "VB"
@@ -41,7 +43,8 @@ function gameTime(game: SportsGame, now: Date, timeZone: string): string {
   const minutes = Math.ceil((startsAt.getTime() - now.getTime()) / 60_000);
   if (minutes > 0 && minutes <= 60) return `IN ${minutes} MIN`;
   const time = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", timeZone }).format(startsAt);
-  return day ? `${day} ${time}` : time;
+  // Reserve space for the sport abbreviation even on tomorrow's matchups.
+  return day ? `${day.replace(" ", "")} ${time.replace(/ ([AP])M$/, "$1")}` : time;
 }
 
 function scoreText(score?: number): string {

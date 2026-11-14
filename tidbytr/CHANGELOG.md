@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.2
+
+- Keep the sport visible on upcoming matchups and display each team's season record and top-25 ranking when available.
+
 ## 0.10.1
 
 - Use two team rows for upcoming games, live scores, and finals, with ESPN logos and right-aligned scores.

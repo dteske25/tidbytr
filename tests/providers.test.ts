@@ -103,10 +103,10 @@ describe("providers", () => {
           return jsonResponse({ events: [{
             id: team.key, date: live ? now.toISOString() : "2026-11-14T21:30:00Z", timeValid: team.teamId !== "66",
             competitions: [{ status: { type: { state: live ? "in" : "pre" } }, competitors: [
-              { homeAway: "home", team: { id: team.teamId, abbreviation: team.teamId === "158" ? "NEB" : "OTHER",
+              { homeAway: "home", records: [{ type: "total", summary: "4-2" }], team: { id: team.teamId, abbreviation: team.teamId === "158" ? "NEB" : "OTHER",
                 color: "e31937", logos: [{ href: "https://a.espncdn.com/i/teamlogos/ncaa/500-dark/158.png", rel: ["dark"] }],
               } },
-              { team: { id: "10", abbreviation: "OPP" } },
+              { records: [{ type: "total", summary: "3-3" }], team: { id: "10", abbreviation: "OPP" } },
             ] }],
           }] });
         }
@@ -130,6 +130,40 @@ describe("providers", () => {
     expect(snapshot.games.find(({ id }) => id === "iowa-state-football")).toMatchObject({
       status: "scheduled", timeTbd: true, startsAt: "2026-11-14T21:30:00Z",
     });
+  });
+
+  it("fills missing pregame records from the game summary and omits unranked markers", async () => {
+    const now = new Date("2026-11-14T18:00:00Z");
+    let summaryAvailable = true;
+    const provider = new EspnSportsProvider({
+      favoriteTeams: ["nebraska-volleyball"], cacheTtlMs: 0,
+      fetchImpl: async (url) => {
+        if (String(url).includes("/summary?")) {
+          if (!summaryAvailable) return new Response(null, { status: 404 });
+          return jsonResponse({ header: { competitions: [{ competitors: [
+            { id: "158", record: [{ type: "total", displayValue: "26-0" }], rank: 1 },
+            { id: "2294", record: [{ type: "home", displayValue: "9-7" }, { type: "total", summary: "13-16" }], rank: 99 },
+          ] }] } });
+        }
+        return jsonResponse({ events: [{ id: "match", date: "2026-11-15T00:00:00Z",
+          competitions: [{ competitors: [
+            { team: { id: "158", abbreviation: "NEB" }, curatedRank: { current: 1 } },
+            { team: { id: "2294", abbreviation: "IOWA" }, curatedRank: { current: 99 } },
+          ] }],
+        }] });
+      },
+    });
+    const first = await provider.getSnapshot(now);
+    expect(first.snapshot.games[0]).toMatchObject({
+      team: "NEB", opponent: "IOWA", status: "scheduled",
+      teamStanding: { rank: 1, record: "26-0" },
+      opponentStanding: { record: "13-16" },
+    });
+    expect(first.snapshot.games[0]?.opponentStanding?.rank).toBeUndefined();
+    summaryAvailable = false;
+    const second = await provider.getSnapshot(now);
+    expect(second.health.status).toBe("ok");
+    expect(second.snapshot.games[0]).toMatchObject({ status: "scheduled", teamStanding: { rank: 1 } });
   });
 
   it("marks sports provider failures as degraded", async () => {
